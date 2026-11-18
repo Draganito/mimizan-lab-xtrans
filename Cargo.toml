@@ -1,0 +1,30 @@
+[package]
+name = "mimizan-lab-xtrans"
+description = "Fuji X-Trans RAF to linear DNG: luminance and colour separated by their carriers, not interpolated"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "GPL-3.0-or-later"
+authors = ["Dragan Bojovic"]
+
+[[bin]]
+name = "xtrans2dng"
+path = "src/main.rs"
+
+[dependencies]
+rawler = "0.8"
+rayon = "1.12"
+rustfft = "6"
+clap = { version = "4.6", features = ["derive"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+debug = 1

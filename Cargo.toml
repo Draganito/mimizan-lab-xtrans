@@ -17,6 +17,23 @@ rayon = "1.12"
 rustfft = "6"
 clap = { version = "4.6", features = ["derive"] }
 
+# `cargo deb --profile dist` builds the Debian package
+# (.github/workflows/deb.yml).
+[package.metadata.deb]
+maintainer = "Dragan Bojovic"
+copyright = "2026, Dragan Bojovic"
+license-file = ["LICENSE", "0"]
+section = "graphics"
+priority = "optional"
+depends = "$auto"
+extended-description = """\
+xtrans2dng turns a Fuji X-Trans RAF into a linear DNG without interpolating
+the mosaic: luminance and the two chrominances are separated by the
+frequencies the X-Trans tile carries them on, under the prior the mosaic
+itself makes most probable. The DNG holds red, green and blue for every
+pixel in the camera's own colours, not balanced and without a tone curve;
+a raw developer opens it like the RAF."""
+
 [lints.rust]
 unsafe_code = "forbid"
 
@@ -28,3 +45,11 @@ opt-level = 3
 lto = "thin"
 codegen-units = 4
 debug = 1
+
+# The package: no debug info, stripped, fat LTO.
+[profile.dist]
+inherits = "release"
+debug = false
+strip = true
+lto = "fat"
+codegen-units = 1

@@ -1,0 +1,62 @@
+# Builds the Debian package.
+#
+# A push to main, or a start by hand, leaves it as an artifact of the run.
+# A v* tag also publishes it as a release; the tag has to name the version
+# in Cargo.toml.
+name: Deb
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  deb:
+    # The oldest system GitHub offers: the package then runs on it and on
+    # everything newer.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # A cache saved by a tag's run belongs to that tag; a tag reads what
+      # main saved.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Tests
+        run: cargo test --profile dist
+      - name: cargo-deb
+        run: cargo install cargo-deb --locked
+      - name: Package
+        run: cargo deb --profile dist
+      - name: The package installs and the program starts
+        run: |
+          deb=$(ls target/debian/mimizan-lab-xtrans_*_amd64.deb)
+          dpkg-deb --info "$deb"
+          dpkg-deb --contents "$deb"
+          sudo dpkg -i "$deb"
+          test "$(command -v xtrans2dng)" = /usr/bin/xtrans2dng
+          xtrans2dng --version
+          test -s /usr/share/doc/mimizan-lab-xtrans/copyright
+      - name: The tag names the version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: test "v$(xtrans2dng --version | awk '{print $2}')" = "$GITHUB_REF_NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb
+          path: target/debian/mimizan-lab-xtrans_*_amd64.deb
+          if-no-files-found: error
+      - name: Publish as a release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/debian/mimizan-lab-xtrans_*_amd64.deb
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-rc') }}

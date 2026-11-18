@@ -1,7 +1,7 @@
 [package]
 name = "mimizan-lab-xtrans"
 description = "Fuji X-Trans RAF to linear DNG: luminance and colour separated by their carriers, not interpolated"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.88"
 license = "GPL-3.0-or-later"

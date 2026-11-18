@@ -25,10 +25,10 @@ A DNG with three 16-bit channels a pixel, in the camera's own colours:
 
 ## Get it
 
-Debian and Ubuntu, 64-bit Intel and AMD: [mimizan-lab-xtrans_0.1.0-1_amd64.deb](https://github.com/Draganito/mimizan-lab-xtrans/releases/download/v0.1.0/mimizan-lab-xtrans_0.1.0-1_amd64.deb). Install the downloaded file:
+Debian and Ubuntu, 64-bit Intel and AMD: [mimizan-lab-xtrans_0.2.0-1_amd64.deb](https://github.com/Draganito/mimizan-lab-xtrans/releases/download/v0.2.0/mimizan-lab-xtrans_0.2.0-1_amd64.deb). Install the downloaded file:
 
 ```bash
-sudo apt install ./mimizan-lab-xtrans_0.1.0-1_amd64.deb
+sudo apt install ./mimizan-lab-xtrans_0.2.0-1_amd64.deb
 ```
 
 That installs the `xtrans2dng` command. Other builds are on the [releases page](https://github.com/Draganito/mimizan-lab-xtrans/releases) when there are any; for now the Debian package is the only one.
@@ -80,9 +80,23 @@ Tried with the files of two cameras, an X-Pro3 (26 megapixels, at ISO 160 and IS
 
 The DNG says black is 0 rather than carrying the RAF's black level, because darktable 5.0 does not read that tag for a picture of three channels and showed such a file grey and magenta.
 
+## Against RawTherapee
+
+Compared with the "3-pass" of RawTherapee 5.11 on a test chart taken with the X-Pro3 at ISO 160 and at ISO 3200. Both pictures went through the same developer with the same settings: RawTherapee's picture was written as a linear DNG too, and Mimizan Lab 0.19.0 printed both. Measured on the 8-bit prints, in steps of 255, at ISO 160 / ISO 3200:
+
+| | 3-pass | 3-pass, false colour suppression 3 | xtrans2dng |
+|---|---|---|---|
+| Edge contrast in the Siemens star | 34.0 / 36.5 | 33.5 / 35.7 | 33.3 / 35.8 |
+| False colour in small white print on black | 20.5 / 30.3 | 6.1 / 11.7 | 6.3 / 9.8 |
+| Colour noise in a dark, flat area | 4.0 / 20.3 | 1.7 / 8.5 | 2.4 / 10.0 |
+| Colour contrast in fine coloured rings | 70.7 / 73.6 | 53.8 / 54.8 | 74.7 / 76.8 |
+| Unrest along lines 2 to 2.8 px apart, ISO 160 | 0.60 | not measured | 0.88 |
+
+It is as sharp as 3-pass with about a third of its false colour and half its colour noise, and it keeps the colour of fine detail, which the suppression takes out. Lines near the sensor's limit are not as calm as RawTherapee's yet; the blank paper beside them measures 0.56. It takes 45 s where RawTherapee takes about 5.
+
 ## What is not known
 
-- **How it stands against other X-Trans demosaicers.** It was not compared with any of them. What was measured is the separation against the picture a synthetic mosaic was made from, and against the Bayer separation of Mimizan Lab on the same pictures.
+- **How it stands against other X-Trans demosaicers** than RawTherapee's 3-pass, and on other pictures than one test chart and one landscape.
 - **Other cameras.** Only the two above were tried. The file is decoded by [rawler](https://github.com/dnglab/dnglab); a RAF it reads and whose tile is an X-Trans one should convert, and a file with another mosaic is refused ("not an X-Trans mosaic").
 - **Other raw developers** than the three above.
 

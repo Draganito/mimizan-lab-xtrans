@@ -19,8 +19,8 @@ use std::time::Instant;
 /// for every pixel in the camera's own colours, not balanced and without
 /// a tone curve; a raw developer opens it like the RAF.
 ///
-/// A 26-megapixel file takes about half a minute on eight cores and 8 GB
-/// of memory.
+/// A 26-megapixel file takes about three quarters of a minute on eight
+/// cores and 8 GB of memory.
 #[derive(Parser, Debug)]
 #[command(name = "xtrans2dng", version)]
 struct Cli {

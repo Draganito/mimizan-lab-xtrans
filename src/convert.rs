@@ -86,15 +86,52 @@ pub struct Developed {
 
 /// The priors the first step weighs against each other: the one found,
 /// the same with a sixteenth, a quarter, four and sixteen times the
-/// colour, and eight with a direction (`cos¹⁶`) at four times the colour.
+/// colour, eight with a direction (`cos¹⁶`) at four times the colour, and
+/// eight more with a direction for lines near the sensor's limit.
+///
+/// Under the prior found, which is the frame's mean, such lines leave the
+/// dots of the tile in the luminance: they stand far above the frame's
+/// mean and are sharper than it, and red, green and blue do not hold the
+/// same contrast in them, so the mosaic holds colour as fine as the lines,
+/// which the mean takes for noise. What is not taken for colour stays in
+/// the luminance. Along one direction the tile holds all three colours in
+/// every row and column, so the lines can be told.
+///
+/// Their priors have a luminance that falls with `f¹` only, a sixteenth of
+/// the noise and half the lens. Their colour is not the one found but a
+/// sixteenth of the luminance at 0.25 c/px, the same at every frequency:
+/// a fortieth of the luminance at 0.1 c/px, an eighth at the limit.
+///
+/// What was tried and measured on two frames of one chart, at ISO 160 and
+/// ISO 3200 (unrest along the lines of the finest wedge; scatter of the
+/// colour in a coarser wedge, a star and small print, all grey):
+/// - Sixteen times the colour found, falling with `f¹`: the dots go at
+///   ISO 160, but the colour found grows with the frame's noise, and at
+///   ISO 3200 the noise comes through as colour along every line (scatter
+///   in the coarser wedge 2.6 to 4.8).
+/// - The colour as above with the luminance of the prior found: the small
+///   print takes these priors too and gets a quarter more colour scatter.
+///   With `f¹` they are taken where the pattern is fine and nowhere else.
+/// - As it is: unrest 1.94 to 0.72 beside 0.74 on the blank paper at
+///   ISO 160 and 5.05 to 3.15 beside 3.01 at ISO 3200; the scatter within
+///   2 % of what it was at ISO 160 and below it at ISO 3200.
 pub fn bank(prior: Prior) -> Vec<Prior> {
     let colour = |f: f64| Prior { chroma: [prior.chroma[0] * f, prior.chroma[1] * f], ..prior };
+    let towards = |q: Prior| {
+        (0..8).map(move |j| Prior { oriented: Some((std::f64::consts::PI * j as f64 / 8.0, 8.0)), ..q })
+    };
+    let lines = Prior {
+        alpha: prior.alpha.min(1.0),
+        alpha_c: 0.0,
+        chroma: [0.0625; 2],
+        noise: prior.noise / 16.0,
+        lens: prior.lens / 2.0,
+        ..prior
+    };
     let mut priors = vec![prior];
     priors.extend([0.0625, 0.25, 4.0, 16.0].map(colour));
-    priors.extend((0..8).map(|j| {
-        let theta = std::f64::consts::PI * j as f64 / 8.0;
-        Prior { oriented: Some((theta, 8.0)), ..colour(4.0) }
-    }));
+    priors.extend(towards(colour(4.0)));
+    priors.extend(towards(lines));
     priors
 }
 
@@ -273,13 +310,21 @@ mod tests {
     }
 
     #[test]
-    fn the_bank_holds_thirteen_priors_around_the_one_found() {
-        let found = Prior { chroma: [0.02, 0.04], ..Prior::default() };
+    fn the_bank_holds_twenty_one_priors_around_the_one_found() {
+        let found = Prior { chroma: [0.02, 0.04], noise: 0.016, lens: 0.5, ..Prior::default() };
         let priors = bank(found);
-        assert_eq!(priors.len(), 13);
+        assert_eq!(priors.len(), 21);
         assert_eq!(priors[0], found);
         assert!(priors[1..5].iter().all(|q| q.oriented.is_none()));
-        assert!(priors[5..].iter().all(|q| q.oriented.is_some() && q.chroma == [0.08, 0.16]));
-        assert!(priors.iter().all(|q| q.noise == found.noise && q.lens == found.lens));
+        assert!(priors[5..13].iter().all(|q| q.oriented.is_some() && q.chroma == [0.08, 0.16]));
+        assert!(priors[..13].iter().all(|q| q.noise == found.noise && q.lens == found.lens));
+        // The lines: a flatter luminance, their own colour, less noise, a
+        // sharper lens.
+        for (q, plain) in priors[13..].iter().zip(&priors[5..13]) {
+            assert_eq!(q.oriented, plain.oriented);
+            assert_eq!((q.chroma, q.alpha_c), ([0.0625; 2], 0.0));
+            assert_eq!((q.noise, q.lens), (0.001, 0.25));
+            assert_eq!((q.alpha, q.f0), (1.0, found.f0));
+        }
     }
 }

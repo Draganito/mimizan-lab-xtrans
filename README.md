@@ -62,7 +62,7 @@ While it works it says what it found: the camera, the prior, the share of burnt-
 
 ## What it takes
 
-A 26-megapixel file takes about half a minute and close to 8 GB of memory: 31 to 32 s and a peak of 7.8 GB on a Ryzen 7 5700U (eight cores). Files are converted one after the other, so the memory is that of one file. A machine with 8 GB does not have that much free.
+A 26-megapixel file takes about three quarters of a minute and close to 8 GB of memory: 43 to 45 s and a peak of 7.8 GB on a Ryzen 7 5700U (eight cores). Files are converted one after the other, so the memory is that of one file. A machine with 8 GB does not have that much free.
 
 ## Highlights
 
@@ -90,7 +90,7 @@ The DNG says black is 0 rather than carrying the RAF's black level, because dark
 
 The 6 x 6 tile has green on five of nine photosites, and red and blue exchanging places on the rest. Read as a signal, the mosaic is a luminance with two chrominances on carriers: green against red and blue on eight of them, red against blue on four. No carrier sits at Nyquist, and they lie closer together than a Bayer mosaic's, so a filter around each carrier, which is how a Bayer mosaic comes apart, loses the colour's detail here.
 
-Instead the luminance and both chrominances of the 36 frequencies the tile ties together are solved at once, by least squares under a prior: how fast luminance and colour fall with frequency, how much colour there is, how much noise, how soft the lens. That prior is searched on the mosaic itself. Thirteen priors are then weighed against each other pixel by pixel by how well each explains the mosaic around it: more or less colour, and pictures that vary along one direction only, which is what a straight edge is.
+Instead the luminance and both chrominances of the 36 frequencies the tile ties together are solved at once, by least squares under a prior: how fast luminance and colour fall with frequency, how much colour there is, how much noise, how soft the lens. That prior is searched on the mosaic itself. Twenty-one priors are then weighed against each other pixel by pixel by how well each explains the mosaic around it: more or less colour, pictures that vary along one direction only, which is what a straight edge is, and lines near the sensor's limit, which otherwise leave the dots of the tile along them.
 
 A second step follows where the picture has two colours. There every photosite measures the same quantity through its own gain and the colour is as sharp as the mosaic; this takes out the dots the first step leaves along a hard edge of colour.
 

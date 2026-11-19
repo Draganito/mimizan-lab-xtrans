@@ -690,8 +690,8 @@ impl App {
         }
     }
 
-    /// The keys of a shortcut as this system writes them: Ctrl+O, and ⌘O
-    /// on a Mac.
+    /// The keys of a shortcut as this system names them: Ctrl+O, and
+    /// Cmd+O on a Mac.
     fn shortcut(ui: &Ui, key: Key) -> String {
         ui.ctx().format_shortcut(&egui::KeyboardShortcut::new(Modifiers::COMMAND, key))
     }
@@ -1113,14 +1113,15 @@ impl App {
         let room = ui.available_rect_before_wrap();
         let response = ui.allocate_rect(room, Sense::click_and_drag());
         let painter = ui.painter_at(room);
+        // In lines when the room is narrower than the words, not cut.
         let say = |text: &str, colour: Color32| {
-            painter.text(
-                room.center(),
-                egui::Align2::CENTER_CENTER,
-                text,
-                egui::FontId::proportional(theme::TEXT),
-                colour,
-            );
+            let font = egui::FontId::proportional(theme::TEXT);
+            let width = (room.width() - 32.0).max(0.0);
+            let mut job = egui::text::LayoutJob::simple(text.to_owned(), font, colour, width);
+            job.halign = egui::Align::Center;
+            let words = painter.layout_job(job);
+            let at = egui::pos2(room.center().x, room.center().y - words.size().y / 2.0);
+            painter.galley(at, words, colour);
         };
         if ui.input(|i| !i.raw.hovered_files.is_empty()) {
             painter.rect_stroke(

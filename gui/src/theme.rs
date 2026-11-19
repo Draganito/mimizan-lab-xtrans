@@ -73,6 +73,8 @@ pub fn glass() -> egui::Frame {
 pub fn panel(ui: &mut Ui, title: &str, beside: impl FnOnce(&mut Ui), add: impl FnOnce(&mut Ui)) {
     glass().show(ui, |ui| {
         ui.set_width(ui.available_width());
+        // Closer than the panels are to one another.
+        ui.spacing_mut().item_spacing.y = 5.0;
         ui.horizontal(|ui| {
             ui.label(RichText::new(title).strong().color(INK_LIT));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), beside);

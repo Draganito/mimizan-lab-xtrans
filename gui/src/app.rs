@@ -1033,17 +1033,22 @@ impl App {
         }
     }
 
+    /// What is set and pressed stands at the bottom and is always there;
+    /// what is only read is above it and scrolls when the window is low.
     fn side(&mut self, ui: &mut Ui) {
         egui::Panel::bottom("go")
             .resizable(false)
             .show_separator_line(false)
             .frame(egui::Frame::new().inner_margin(egui::Margin { top: 8, ..Default::default() }))
-            .show(ui, |ui| self.go_panel(ui));
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 8.0;
+                self.output_panel(ui);
+                self.go_panel(ui);
+            });
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
             self.file_panel(ui);
             self.dng_panel(ui);
-            self.output_panel(ui);
         });
     }
 

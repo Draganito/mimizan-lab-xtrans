@@ -31,7 +31,8 @@ rustfft = "6"
 clap = { version = "4.6", features = ["derive"] }
 
 # `cargo deb --profile dist` builds the Debian package
-# (.github/workflows/deb.yml).
+# (.github/workflows/packages.yml). The Windows and the macOS archive are
+# made by dist/make_windows_zip.ps1 and dist/make_macos_zip.sh.
 [package.metadata.deb]
 maintainer = "Dragan Bojovic"
 copyright = "2026, Dragan Bojovic"
@@ -44,7 +45,7 @@ depends = "$auto"
 assets = [
     ["target/release/xtrans2dng", "usr/bin/", "755"],
     ["target/release/xtrans2dng-gui", "usr/bin/", "755"],
-    ["gui/dist/mimizan-lab-xtrans.desktop", "usr/share/applications/", "644"],
+    ["dist/mimizan-lab-xtrans.desktop", "usr/share/applications/", "644"],
     ["gui/assets/icon-16.png", "usr/share/icons/hicolor/16x16/apps/mimizan-lab-xtrans.png", "644"],
     ["gui/assets/icon-32.png", "usr/share/icons/hicolor/32x32/apps/mimizan-lab-xtrans.png", "644"],
     ["gui/assets/icon-48.png", "usr/share/icons/hicolor/48x48/apps/mimizan-lab-xtrans.png", "644"],
@@ -52,6 +53,7 @@ assets = [
     ["gui/assets/icon-128.png", "usr/share/icons/hicolor/128x128/apps/mimizan-lab-xtrans.png", "644"],
     ["gui/assets/icon-256.png", "usr/share/icons/hicolor/256x256/apps/mimizan-lab-xtrans.png", "644"],
     ["README.md", "usr/share/doc/mimizan-lab-xtrans/", "644"],
+    ["dist/third-party/*", "usr/share/doc/mimizan-lab-xtrans/third-party/", "644"],
 ]
 extended-description = """\
 xtrans2dng turns a Fuji X-Trans RAF into a linear DNG without interpolating

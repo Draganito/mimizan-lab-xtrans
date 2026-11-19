@@ -1,0 +1,17 @@
+Third-party software
+
+xtrans2dng and xtrans2dng-gui use the libraries below. Each is the work of
+its own authors and stays under its own license. This file is about those
+libraries only.
+
+rawler
+    RAW decoding and DNG writing. By Daniel Vogelbacher and Pedro
+    Côrte-Real.
+    rawler and its use are covered by the GNU Lesser General Public
+    License, version 2.1. The text is in LGPL-2.1.txt, next to this file.
+    Source: https://github.com/dnglab/dnglab
+
+option-ext
+    In xtrans2dng-gui only. By Simon Ochsenreither.
+    Mozilla Public License 2.0: https://www.mozilla.org/MPL/2.0/
+    Source: https://github.com/soc/option-ext

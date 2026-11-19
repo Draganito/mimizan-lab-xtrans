@@ -1,9 +1,14 @@
-# Builds the Debian package.
+# Builds the three packages: the Debian package, the Windows archive and
+# the Apple silicon archive.
 #
-# A push to main, or a start by hand, leaves it as an artifact of the run.
-# A v* tag also publishes it as a release; the tag has to name the version
-# in Cargo.toml.
-name: Deb
+# A push to main, or a start by hand, leaves them as artifacts of the run.
+# A v* tag also publishes them as a release; the tag has to name the
+# version in Cargo.toml.
+#
+# On Windows and macOS the window is started from the unpacked archive and
+# takes a picture of itself, which the run keeps: nobody sits in front of
+# those two.
+name: Packages
 
 on:
   push:
@@ -18,7 +23,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  deb:
+  linux:
     # The oldest system GitHub offers: the package then runs on it and on
     # everything newer.
     runs-on: ubuntu-22.04
@@ -53,18 +58,127 @@ jobs:
           test -s /usr/share/applications/mimizan-lab-xtrans.desktop
           test -s /usr/share/icons/hicolor/256x256/apps/mimizan-lab-xtrans.png
           test -s /usr/share/doc/mimizan-lab-xtrans/copyright
+          test -s /usr/share/doc/mimizan-lab-xtrans/third-party/THIRD-PARTY.txt
+          test -s /usr/share/doc/mimizan-lab-xtrans/third-party/LGPL-2.1.txt
       - name: The tag names the version
         if: startsWith(github.ref, 'refs/tags/')
         run: test "v$(xtrans2dng --version | awk '{print $2}')" = "$GITHUB_REF_NAME"
       - uses: actions/upload-artifact@v4
         with:
-          name: deb
+          name: linux-package
           path: target/debian/mimizan-lab-xtrans_*_amd64.deb
           if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Tests
+        run: cargo test --profile dist --workspace
+      - name: Package
+        shell: pwsh
+        run: pwsh -ExecutionPolicy Bypass -File ./dist/make_windows_zip.ps1
+      - name: The window opens from the unpacked archive
+        shell: pwsh
+        run: |
+          $zip = (Get-ChildItem target/windows/mimizan-lab-xtrans-*-x86_64-windows.zip).FullName
+          $to = Join-Path $env:RUNNER_TEMP "unpacked"
+          New-Item -ItemType Directory -Path $to -Force | Out-Null
+          tar.exe -x -f $zip -C $to
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $root = (Get-ChildItem $to -Directory).FullName
+          Get-ChildItem $root -Recurse | Select-Object FullName, Length
+          & (Join-Path $root "xtrans2dng.exe") --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:XTRANS_GUI_SHOT = Join-Path $env:RUNNER_TEMP "window-windows.png"
+          $env:XTRANS_GUI_WINDOW = "1360x860"
+          $window = Start-Process -FilePath (Join-Path $root "xtrans2dng-gui.exe") -PassThru
+          if (-not $window.WaitForExit(120000)) {
+              $window.Kill()
+              throw "ERROR: the window took no picture of itself in two minutes"
+          }
+          if (-not (Test-Path -LiteralPath $env:XTRANS_GUI_SHOT)) {
+              throw "ERROR: the window closed without its picture (exit code $($window.ExitCode))"
+          }
+          Get-Item -LiteralPath $env:XTRANS_GUI_SHOT | Select-Object FullName, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: window-windows
+          path: ${{ runner.temp }}/window-windows.png
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-package
+          path: target/windows/mimizan-lab-xtrans-*-x86_64-windows.zip
+          if-no-files-found: error
+
+  macos:
+    # Hosted macOS runners are Apple silicon. The script refuses an Intel
+    # machine.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Tests
+        run: cargo test --profile dist --workspace
+      - name: Package
+        run: bash dist/make_macos_zip.sh
+      - name: The window opens from the unpacked archive
+        run: |
+          zip=$(ls target/macos/mimizan-lab-xtrans-*-aarch64-macos.zip)
+          to="$RUNNER_TEMP/unpacked"
+          mkdir -p "$to"
+          ditto -x -k "$zip" "$to"
+          find "$to" -not -name '*.png' | sort
+          app=$(ls -d "$to"/*/*.app)
+          "$app/Contents/MacOS/xtrans2dng" --version
+          shot="$RUNNER_TEMP/window-macos.png"
+          XTRANS_GUI_SHOT="$shot" XTRANS_GUI_WINDOW=1360x860 "$app/Contents/MacOS/xtrans2dng-gui" &
+          window=$!
+          for _ in $(seq 120); do
+            kill -0 "$window" 2>/dev/null || break
+            sleep 1
+          done
+          if kill -0 "$window" 2>/dev/null; then
+            kill "$window"
+            echo "ERROR: the window took no picture of itself in two minutes"
+            exit 1
+          fi
+          wait "$window" || echo "the window ended with $?"
+          test -s "$shot" || { echo "ERROR: the window closed without its picture"; exit 1; }
+          ls -l "$shot"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: window-macos
+          path: ${{ runner.temp }}/window-macos.png
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-package
+          path: target/macos/mimizan-lab-xtrans-*-aarch64-macos.zip
+          if-no-files-found: error
+
+  publish:
+    needs: [linux, windows, macos]
+    # By hand or on main there is no tag to publish under.
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-package"
+          path: packages
+          merge-multiple: true
       - name: Publish as a release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: target/debian/mimizan-lab-xtrans_*_amd64.deb
+          files: packages/*
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-rc') }}

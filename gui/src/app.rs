@@ -926,14 +926,24 @@ impl App {
                 ui.checkbox(&mut s.uncompressed, "Uncompressed").on_hover_text(
                     "The DNG is compressed without loss. Without compression it is about twice as large.",
                 );
-                let rest = if work::SWAP_GROWS {
+                let rest = if cfg!(target_os = "windows") {
+                    "with this it is begun all the same and Windows enlarges its page file"
+                } else if work::SWAP_GROWS {
                     "with this it is begun all the same and macOS swaps the rest"
                 } else {
                     "with this it is begun as long as the swap holds the rest"
                 };
+                // Windows gives no more than its page file holds, and a
+                // program that is given no memory ends on the spot.
+                let fixed = if cfg!(target_os = "windows") {
+                    " With a page file of a set size, or none, the program can end without a word \
+                     when the memory runs out."
+                } else {
+                    ""
+                };
                 ui.checkbox(&mut s.use_swap, "Use the swap when memory is short").on_hover_text(format!(
                     "A picture takes about 0.3 GB of memory for every megapixel. A file that needs more \
-                     than is free is left out; {rest}, which is slow and holds up other programs."
+                     than is free is left out; {rest}, which is slow and holds up other programs.{fixed}"
                 ));
                 if choose {
                     self.open_dialog(Pick::Output);

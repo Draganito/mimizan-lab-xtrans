@@ -28,10 +28,13 @@ pub struct Memory {
     pub swap: u64,
 }
 
-/// macOS makes its swap as it is needed: how much of it is free now says
-/// nothing about how much a program will be given. Linux and Windows
-/// have a swap of a size, and refuse what is beyond it.
-pub const SWAP_GROWS: bool = cfg!(target_os = "macos");
+/// macOS makes its swap as it is needed, and Windows enlarges its page
+/// file unless someone gave it a size: how much of it is free now says
+/// nothing about how much a program will be given. On Windows the number
+/// is the page file as large as it is now, which is small on a machine
+/// that has not swapped yet, and a file was refused that Windows would
+/// have held. Linux has a swap of a size, and refuses what is beyond it.
+pub const SWAP_GROWS: bool = cfg!(any(target_os = "macos", target_os = "windows"));
 
 impl Memory {
     pub fn read(system: &mut System) -> Self {
@@ -179,7 +182,8 @@ mod tests {
         assert_eq!(memory.takes(xt5, true), Ok(()));
         let small = Memory { free: 3_000_000_000, swap: 1_000_000_000 };
         assert_eq!(small.takes(xt4, true).unwrap_err(), "needs about 7.8 GB of memory, 3.0 GB are free");
-        // A Mac with 8 GB: its swap has no end the program could ask for.
+        // A Mac or a Windows machine with 8 GB: its swap has no end the
+        // program could ask for.
         let mac = Memory { free: 3_000_000_000, swap: u64::MAX };
         assert_eq!(mac.takes(xt5, true), Ok(()));
         assert_eq!(

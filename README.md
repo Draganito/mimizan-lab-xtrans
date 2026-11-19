@@ -103,6 +103,17 @@ Tried with the files of two cameras, an X-Pro3 (26 megapixels, at ISO 160 and IS
 
 The DNG says black is 0 rather than carrying the RAF's black level, because darktable 5.0 does not read that tag for a picture of three channels and showed such a file grey and magenta.
 
+## What it does
+
+It is a demosaicer, and it is not what Mimizan Lab does with a Bayer file. There, every pixel is one clean measurement and nothing is estimated. Here, one reading per photosite goes in and three colour values per pixel come out, worked out from the readings around it. The mosaic is not filled in by guessing: brightness and colour are read off the frequencies where the X-Trans pattern carries them.
+
+- **More of the real detail, less false colour.** As sharp as RawTherapee's 3-pass, with about a third of the false colour.
+- **The colour of the fine detail stays.** Nothing goes back over the picture to clean it up, so the real colour is not taken away with the false.
+- **Less noise, and calmer.** About half the colour noise at high ISO.
+- **A DNG your developer already opens.** Linear, in the camera's own colours: black at 0, white at 65535, no tone curve, the white balance left for the developer. It opens the file the way it opens the RAF.
+
+The comparison behind the numbers is [below](#against-rawtherapee): one test chart from an X-Pro3, at ISO 160 and ISO 3200, both pictures printed by Mimizan Lab 0.19.0 and measured on the 8-bit prints. The finest lines, 2 to 2.8 pixels apart, are not there yet: RawTherapee's are calmer.
+
 ## Against RawTherapee
 
 Compared with the "3-pass" of RawTherapee 5.11 on a test chart taken with the X-Pro3 at ISO 160 and at ISO 3200. Both pictures went through the same developer with the same settings: RawTherapee's picture was written as a linear DNG too, and Mimizan Lab 0.19.0 printed both. Measured on the 8-bit prints, in steps of 255, at ISO 160 / ISO 3200:

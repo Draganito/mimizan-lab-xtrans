@@ -25,17 +25,17 @@ A DNG with three 16-bit channels a pixel, in the camera's own colours:
 
 ## Get it
 
-Debian and Ubuntu, 64-bit Intel and AMD: [mimizan-lab-xtrans_0.4.0-1_amd64.deb](https://github.com/Draganito/mimizan-lab-xtrans/releases/download/v0.4.0/mimizan-lab-xtrans_0.4.0-1_amd64.deb). Install the downloaded file:
+Debian and Ubuntu, 64-bit Intel and AMD: [mimizan-lab-xtrans_0.4.1-1_amd64.deb](https://github.com/Draganito/mimizan-lab-xtrans/releases/download/v0.4.1/mimizan-lab-xtrans_0.4.1-1_amd64.deb). Install the downloaded file:
 
 ```bash
-sudo apt install ./mimizan-lab-xtrans_0.4.0-1_amd64.deb
+sudo apt install ./mimizan-lab-xtrans_0.4.1-1_amd64.deb
 ```
 
 That installs the `xtrans2dng` command and [the window](#the-window), `xtrans2dng-gui`, with an entry in the applications menu.
 
-Windows, 64-bit Intel and AMD: [mimizan-lab-xtrans-0.4.0-x86_64-windows.zip](https://github.com/Draganito/mimizan-lab-xtrans/releases/download/v0.4.0/mimizan-lab-xtrans-0.4.0-x86_64-windows.zip). Unzip it and start `xtrans2dng-gui.exe`; `xtrans2dng.exe` beside it is the command. The programs carry the Visual C++ runtime, and the window draws with DirectX 12 and opens without a terminal. An unsigned download asks SmartScreen for confirmation.
+Windows, 64-bit Intel and AMD: [mimizan-lab-xtrans-0.4.1-x86_64-windows.zip](https://github.com/Draganito/mimizan-lab-xtrans/releases/download/v0.4.1/mimizan-lab-xtrans-0.4.1-x86_64-windows.zip). Unzip it and start `xtrans2dng-gui.exe`; `xtrans2dng.exe` beside it is the command. The programs carry the Visual C++ runtime, and the window draws with DirectX 12 and opens without a terminal. An unsigned download asks SmartScreen for confirmation.
 
-Apple silicon: [mimizan-lab-xtrans-0.4.0-aarch64-macos.zip](https://github.com/Draganito/mimizan-lab-xtrans/releases/download/v0.4.0/mimizan-lab-xtrans-0.4.0-aarch64-macos.zip). Unzip it and open `Mimizan Lab X-Trans.app`. The command is `Mimizan Lab X-Trans.app/Contents/MacOS/xtrans2dng`. The programs use what comes with macOS. The download is not signed: if macOS will not open the app, or says it is damaged, open a terminal next to the unzipped app and run this to clear the quarantine flag and sign it locally:
+Apple silicon: [mimizan-lab-xtrans-0.4.1-aarch64-macos.zip](https://github.com/Draganito/mimizan-lab-xtrans/releases/download/v0.4.1/mimizan-lab-xtrans-0.4.1-aarch64-macos.zip). Unzip it and open `Mimizan Lab X-Trans.app`. The command is `Mimizan Lab X-Trans.app/Contents/MacOS/xtrans2dng`. The programs use what comes with macOS. The download is not signed: if macOS will not open the app, or says it is damaged, open a terminal next to the unzipped app and run this to clear the quarantine flag and sign it locally:
 
 ```bash
 xattr -cr "Mimizan Lab X-Trans.app" && codesign --force --deep -s - "Mimizan Lab X-Trans.app"

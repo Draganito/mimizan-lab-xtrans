@@ -31,9 +31,13 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Tests
-        run: cargo test --profile dist
+        run: cargo test --profile dist --workspace
       - name: cargo-deb
         run: cargo install cargo-deb --locked
+      # The window is the workspace's second package; `cargo deb` builds
+      # the first and takes the window as it lies there.
+      - name: The window
+        run: cargo build --profile dist -p mimizan-lab-xtrans-gui
       - name: Package
         run: cargo deb --profile dist
       - name: The package installs and the program starts
@@ -44,6 +48,10 @@ jobs:
           sudo dpkg -i "$deb"
           test "$(command -v xtrans2dng)" = /usr/bin/xtrans2dng
           xtrans2dng --version
+          test "$(command -v xtrans2dng-gui)" = /usr/bin/xtrans2dng-gui
+          test "$(xtrans2dng-gui --version | awk '{print $2}')" = "$(xtrans2dng --version | awk '{print $2}')"
+          test -s /usr/share/applications/mimizan-lab-xtrans.desktop
+          test -s /usr/share/icons/hicolor/256x256/apps/mimizan-lab-xtrans.png
           test -s /usr/share/doc/mimizan-lab-xtrans/copyright
       - name: The tag names the version
         if: startsWith(github.ref, 'refs/tags/')

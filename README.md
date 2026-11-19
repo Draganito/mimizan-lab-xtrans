@@ -31,13 +31,15 @@ Debian and Ubuntu, 64-bit Intel and AMD: [mimizan-lab-xtrans_0.2.0-1_amd64.deb](
 sudo apt install ./mimizan-lab-xtrans_0.2.0-1_amd64.deb
 ```
 
-That installs the `xtrans2dng` command. Other builds are on the [releases page](https://github.com/Draganito/mimizan-lab-xtrans/releases) when there are any; for now the Debian package is the only one.
+That installs the `xtrans2dng` command. From the release after 0.2.0 the package also holds [the window](#the-window), `xtrans2dng-gui`, with an entry in the applications menu. Other builds are on the [releases page](https://github.com/Draganito/mimizan-lab-xtrans/releases) when there are any; for now the Debian package is the only one.
 
 From the source, with Rust 1.88 or later:
 
 ```bash
 cargo build --release
 target/release/xtrans2dng --help
+cargo build --release -p mimizan-lab-xtrans-gui
+target/release/xtrans2dng-gui
 ```
 
 It has been built and run on Linux only. Nothing in it is specific to Linux, but Windows and macOS were not tried.
@@ -59,6 +61,19 @@ Every RAF gives a DNG of its name beside it. A DNG that is there already is left
 | `-q`, `--quiet` | Say nothing but errors. |
 
 While it works it says what it found: the camera, the prior, the share of burnt-out photosites, the times. A DNG is written under another name and renamed when it is whole, so a DNG that is there is finished. When a file fails the others are still converted, and the command ends with an error.
+
+## The window
+
+`xtrans2dng-gui` is the same conversion with a list in front of it, for more than a few files.
+
+![The window: the list of files, the picture, and what the file says about itself](docs/window.jpg)
+
+- **Add** RAFs or folders with the buttons, or drop them on the window. Each file shows the camera's preview and what it says about itself: camera, exposure, lens, sensor, and the size the DNG will have.
+- **Mark** the files to convert: the box in a row, Space, Shift for a range, or All, None and Without DNG in the toolbar. A file comes in marked unless its DNG is there already.
+- **Convert** runs the marked files one after the other. The row and the panel at the right say how far the file in work is; "Stop after this file" ends the run there.
+- **When a file is done** its DNG is read back and shown in the preview's place. To be looked at it is balanced, taken to sRGB by its own matrix, made as light as the preview and given a mild contrast; the file is not touched by that. `D` goes between preview and DNG, the wheel enlarges, `1` is one pixel on one, `F` the whole picture.
+
+The DNGs go beside their RAFs or into one folder, and they are the ones the command writes, byte for byte. A file that needs more memory than is free when its turn comes is left out and says so.
 
 ## What it takes
 

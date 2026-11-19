@@ -1,0 +1,38 @@
+[package]
+name = "mimizan-lab-xtrans-gui"
+description = "xtrans2dng in a window: a list of Fuji X-Trans RAFs, converted to linear DNGs one after the other"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "xtrans2dng-gui"
+path = "src/main.rs"
+
+[dependencies]
+mimizan-lab-xtrans = { path = ".." }
+rawler = "0.8"
+rayon = "1.12"
+egui = "0.36"
+egui-file-dialog = "0.15"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+# Free memory before a file is begun: a picture takes several GB.
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+
+# GNOME Wayland draws no server-side frame: winit draws the Adwaita-style
+# client-side decorations itself.
+[target.'cfg(target_os = "linux")'.dependencies]
+eframe = { version = "0.36", default-features = false, features = ["glow", "wayland", "x11", "default_fonts"] }
+winit = { version = "0.30", default-features = false, features = ["wayland-csd-adwaita"] }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+eframe = { version = "0.36", default-features = false, features = ["glow", "default_fonts"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"

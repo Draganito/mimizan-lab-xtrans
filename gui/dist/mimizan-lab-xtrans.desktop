@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Mimizan Lab X-Trans
+Icon=mimizan-lab-xtrans
+Comment=Fuji X-Trans RAFs to linear DNGs, a list of them at a time
+Exec=xtrans2dng-gui %F
+StartupWMClass=mimizan-lab-xtrans
+Terminal=false
+Categories=Graphics;Photography;
+MimeType=image/x-fuji-raf;
+Keywords=raw;fuji;x-trans;raf;dng;convert;

@@ -1,11 +1,24 @@
-[package]
-name = "mimizan-lab-xtrans"
-description = "Fuji X-Trans RAF to linear DNG: luminance and colour separated by their carriers, not interpolated"
+# The command line is the package at the root, and what `cargo build`,
+# `cargo test` and `cargo deb` mean without more words. The window is the
+# second member: `cargo build --release -p mimizan-lab-xtrans-gui`.
+[workspace]
+members = [".", "gui"]
+
+[workspace.package]
 version = "0.2.0"
 edition = "2021"
 rust-version = "1.88"
 license = "GPL-3.0-or-later"
 authors = ["Dragan Bojovic"]
+
+[package]
+name = "mimizan-lab-xtrans"
+description = "Fuji X-Trans RAF to linear DNG: luminance and colour separated by their carriers, not interpolated"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
 
 [[bin]]
 name = "xtrans2dng"
@@ -26,13 +39,28 @@ license-file = ["LICENSE", "0"]
 section = "graphics"
 priority = "optional"
 depends = "$auto"
+# The window is the workspace's second package: it is built before
+# `cargo deb` runs (`cargo build --profile dist -p mimizan-lab-xtrans-gui`).
+assets = [
+    ["target/release/xtrans2dng", "usr/bin/", "755"],
+    ["target/release/xtrans2dng-gui", "usr/bin/", "755"],
+    ["gui/dist/mimizan-lab-xtrans.desktop", "usr/share/applications/", "644"],
+    ["gui/assets/icon-16.png", "usr/share/icons/hicolor/16x16/apps/mimizan-lab-xtrans.png", "644"],
+    ["gui/assets/icon-32.png", "usr/share/icons/hicolor/32x32/apps/mimizan-lab-xtrans.png", "644"],
+    ["gui/assets/icon-48.png", "usr/share/icons/hicolor/48x48/apps/mimizan-lab-xtrans.png", "644"],
+    ["gui/assets/icon-64.png", "usr/share/icons/hicolor/64x64/apps/mimizan-lab-xtrans.png", "644"],
+    ["gui/assets/icon-128.png", "usr/share/icons/hicolor/128x128/apps/mimizan-lab-xtrans.png", "644"],
+    ["gui/assets/icon-256.png", "usr/share/icons/hicolor/256x256/apps/mimizan-lab-xtrans.png", "644"],
+    ["README.md", "usr/share/doc/mimizan-lab-xtrans/", "644"],
+]
 extended-description = """\
 xtrans2dng turns a Fuji X-Trans RAF into a linear DNG without interpolating
 the mosaic: luminance and the two chrominances are separated by the
 frequencies the X-Trans tile carries them on, under the prior the mosaic
 itself makes most probable. The DNG holds red, green and blue for every
 pixel in the camera's own colours, not balanced and without a tone curve;
-a raw developer opens it like the RAF."""
+a raw developer opens it like the RAF. xtrans2dng-gui is the same in a
+window: a list of RAFs, converted one after the other."""
 
 [lints.rust]
 unsafe_code = "forbid"

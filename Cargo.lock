@@ -1711,7 +1711,7 @@ dependencies = [
 
 [[package]]
 name = "mimizan-lab-xtrans"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "rawler",
@@ -1721,7 +1721,7 @@ dependencies = [
 
 [[package]]
 name = "mimizan-lab-xtrans-gui"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "eframe",
  "egui",

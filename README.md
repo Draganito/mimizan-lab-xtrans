@@ -25,13 +25,13 @@ A DNG with three 16-bit channels a pixel, in the camera's own colours:
 
 ## Get it
 
-Debian and Ubuntu, 64-bit Intel and AMD: [mimizan-lab-xtrans_0.2.0-1_amd64.deb](https://github.com/Draganito/mimizan-lab-xtrans/releases/download/v0.2.0/mimizan-lab-xtrans_0.2.0-1_amd64.deb). Install the downloaded file:
+Debian and Ubuntu, 64-bit Intel and AMD: [mimizan-lab-xtrans_0.3.0-1_amd64.deb](https://github.com/Draganito/mimizan-lab-xtrans/releases/download/v0.3.0/mimizan-lab-xtrans_0.3.0-1_amd64.deb). Install the downloaded file:
 
 ```bash
-sudo apt install ./mimizan-lab-xtrans_0.2.0-1_amd64.deb
+sudo apt install ./mimizan-lab-xtrans_0.3.0-1_amd64.deb
 ```
 
-That installs the `xtrans2dng` command. From the release after 0.2.0 the package also holds [the window](#the-window), `xtrans2dng-gui`, with an entry in the applications menu. Other builds are on the [releases page](https://github.com/Draganito/mimizan-lab-xtrans/releases) when there are any; for now the Debian package is the only one.
+That installs the `xtrans2dng` command and [the window](#the-window), `xtrans2dng-gui`, with an entry in the applications menu. Other builds are on the [releases page](https://github.com/Draganito/mimizan-lab-xtrans/releases) when there are any; for now the Debian package is the only one.
 
 From the source, with Rust 1.88 or later:
 

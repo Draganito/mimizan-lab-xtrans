@@ -50,6 +50,27 @@ pub fn frame(sensor: &XTile, crop: (usize, usize, usize, usize)) -> Option<Frame
     None
 }
 
+/// The frame of `img` that is developed: [`frame`] on the file's crop.
+/// It needs the file's head only, not its mosaic, so it tells what the
+/// picture will measure before anything is decoded.
+pub fn frame_of(img: &RawImage) -> Result<Frame, String> {
+    let RawPhotometricInterpretation::Cfa(config) = &img.photometric else {
+        return Err("the file holds no mosaic".into());
+    };
+    let sensor = (config.cfa.width == 6 && config.cfa.height == 6)
+        .then(|| XTile::from_name(&config.cfa.name))
+        .flatten()
+        .ok_or_else(|| format!("not an X-Trans mosaic (its tile is {})", config.cfa.name))?;
+    let crop = img
+        .crop_area
+        .or(img.active_area)
+        .map_or((0, 0, img.width, img.height), |r| (r.p.x, r.p.y, r.d.w, r.d.h));
+    if crop.0 + crop.2 > img.width || crop.1 + crop.3 > img.height {
+        return Err("the file's crop lies outside its mosaic".into());
+    }
+    frame(&sensor, crop).ok_or_else(|| "no frame the tile mirrors on".into())
+}
+
 /// A full photosite in the picture; no light is 0.
 ///
 /// The file's own black level is not carried over, though a DNG has a tag
@@ -137,13 +158,18 @@ pub fn bank(prior: Prior) -> Vec<Prior> {
 
 /// The picture of an X-Trans mosaic. `say` is told what is being done.
 pub fn develop(img: &RawImage, settings: &Settings, say: &dyn Fn(&str)) -> Result<Developed, String> {
-    let RawPhotometricInterpretation::Cfa(config) = &img.photometric else {
-        return Err("the file holds no mosaic".into());
-    };
-    let sensor = (config.cfa.width == 6 && config.cfa.height == 6)
-        .then(|| XTile::from_name(&config.cfa.name))
-        .flatten()
-        .ok_or_else(|| format!("not an X-Trans mosaic (its tile is {})", config.cfa.name))?;
+    develop_watched(img, settings, say, &|_| {})
+}
+
+/// [`develop`], telling `separated` the share of the first step that is
+/// done as it goes; that step is most of the time.
+pub fn develop_watched(
+    img: &RawImage,
+    settings: &Settings,
+    say: &dyn Fn(&str),
+    separated: &dyn Fn(f64),
+) -> Result<Developed, String> {
+    let frame = frame_of(img)?;
     let RawImageData::Integer(raw) = &img.data else {
         return Err("the mosaic is not in whole numbers".into());
     };
@@ -162,14 +188,6 @@ pub fn develop(img: &RawImage, settings: &Settings, say: &dyn Fn(&str)) -> Resul
     if !(white.is_finite() && black.is_finite() && white > black && black >= 0.0 && white <= 65535.0) {
         return Err(format!("black {black} and white {white} are no range"));
     }
-    let crop = img
-        .crop_area
-        .or(img.active_area)
-        .map_or((0, 0, img.width, img.height), |r| (r.p.x, r.p.y, r.d.w, r.d.h));
-    if crop.0 + crop.2 > img.width || crop.1 + crop.3 > img.height {
-        return Err("the file's crop lies outside its mosaic".into());
-    }
-    let frame = frame(&sensor, crop).ok_or("no frame the tile mirrors on")?;
     let Frame { x: fx, y: fy, width: w, height: h, tile } = frame;
 
     // The photosites, 0 at black and 1 at white.
@@ -237,7 +255,7 @@ pub fn develop(img: &RawImage, settings: &Settings, say: &dyn Fn(&str)) -> Resul
 
     say("separating luminance and colour");
     let t = Instant::now();
-    let sep = xtrans::separate_bank(&m, &tile, &p, &bank(prior), &Selection::default());
+    let sep = xtrans::separate_bank_watched(&m, &tile, &p, &bank(prior), &Selection::default(), separated);
     let first = t.elapsed().as_secs_f64();
 
     say("sharpening the colour at its edges");

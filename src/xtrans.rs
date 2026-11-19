@@ -1534,8 +1534,23 @@ pub fn select(hyps: &[Hypothesis], sel: &Selection) -> (Plane, Plane) {
 /// running sums. In memory at a time: every tile's spectrum, the sums,
 /// one prior's factors, and the estimates of [`AT_ONCE`] tiles.
 pub fn separate_bank(m: &Plane, tile: &XTile, p: &XParams, priors: &[Prior], sel: &Selection) -> XSeparation {
+    separate_bank_watched(m, tile, p, priors, sel, &|_| {})
+}
+
+/// [`separate_bank`], telling `done` the share of the priors that are
+/// through after each of them, for a window that shows how far it is.
+pub fn separate_bank_watched(
+    m: &Plane,
+    tile: &XTile,
+    p: &XParams,
+    priors: &[Prior],
+    sel: &Selection,
+    done: &dyn Fn(f64),
+) -> XSeparation {
     if let [only] = priors {
-        return separate_xtrans(m, tile, &XParams { lmmse: Some(*only), ..*p });
+        let sep = separate_xtrans(m, tile, &XParams { lmmse: Some(*only), ..*p });
+        done(1.0);
+        return sep;
     }
     let (w, h) = (m.width, m.height);
     let (sx, sy) = (p.tile.min(up6(w)), p.tile.min(up6(h)));
@@ -1620,6 +1635,7 @@ pub fn separate_bank(m: &Plane, tile: &XTile, p: &XParams, priors: &[Prior], sel
                 }
             });
         }
+        done((k + 1) as f64 / priors.len() as f64);
     }
     let mut c1 = Plane::zeros(w, h);
     let mut c2 = Plane::zeros(w, h);

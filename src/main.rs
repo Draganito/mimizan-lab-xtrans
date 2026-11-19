@@ -1,15 +1,9 @@
 //! `xtrans2dng`: Fuji X-Trans RAF in, linear DNG out.
 
 use clap::Parser;
-use mimizan_lab_xtrans::convert::{self, Settings};
-use mimizan_lab_xtrans::dng;
-use rawler::decoders::RawDecodeParams;
-use rawler::rawsource::RawSource;
-use std::fs::{self, File};
-use std::io::BufWriter;
+use mimizan_lab_xtrans::file::{self, Event, Options};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::Instant;
 
 /// Fuji X-Trans RAF to linear DNG.
 ///
@@ -68,62 +62,40 @@ fn convert_one(raf: &Path, to: &Path, cli: &Cli) -> Result<(), String> {
             eprintln!("  {s}");
         }
     };
-    if to.exists() && !cli.force {
-        return Err(format!("{} is there already (--force writes over it)", to.display()));
-    }
-    if fs::canonicalize(to).ok().is_some_and(|t| fs::canonicalize(raf).ok() == Some(t)) {
-        return Err("the DNG would be written over the RAF".into());
-    }
-    let started = Instant::now();
-    let source = RawSource::new(raf).map_err(|e| format!("cannot be read: {e}"))?;
-    let decoder =
-        rawler::get_decoder(&source).map_err(|e| format!("not a raw file this program reads: {e}"))?;
-    let img = decoder
-        .raw_image(&source, &RawDecodeParams::default(), false)
-        .map_err(|e| format!("cannot be decoded: {e}"))?;
-    say(&format!("{} {}, {} x {} photosites", img.clean_make, img.clean_model, img.width, img.height));
-
-    let settings = Settings { keep_highlights: cli.keep_highlights };
-    let dev = convert::develop(&img, &settings, &say)?;
-    let (frame, q, t) = (dev.frame, dev.prior, dev.seconds);
+    let options =
+        Options { keep_highlights: cli.keep_highlights, uncompressed: cli.uncompressed, force: cli.force };
+    let r = file::convert(raf, to, &options, &|event| match event {
+        Event::Decoded { make, model, width, height } => {
+            say(&format!("{make} {model}, {width} x {height} photosites"));
+        }
+        Event::Doing(what) => say(what),
+        Event::Separated(_) | Event::Writing => {}
+    })?;
+    let (q, t) = (r.prior, r.seconds);
     say(&format!(
         "prior: luminance falls with f^{:.2}, colour with f^{:.2}; colour {:.4} and {:.4}, noise {:.1e}, lens {:.2} px",
         q.alpha, q.alpha_c, q.chroma[0], q.chroma[1], q.noise, q.lens
     ));
-    if !dev.balance_from_file {
+    if !r.balance_from_file {
         say("the file gives no white balance: balanced to a grey mean");
     }
-    if dev.burnt > 0 {
-        let share = 100.0 * dev.burnt as f64 / (frame.width * frame.height) as f64;
+    if r.burnt > 0 {
         let what = if cli.keep_highlights { "kept as recorded" } else { "cut to neutral" };
-        say(&format!("{share:.3} % of the photosites are burnt out, {what}"));
+        say(&format!("{:.3} % of the photosites are burnt out, {what}", 100.0 * r.burnt_share()));
     }
-    if dev.below > 0 {
-        let share = 100.0 * dev.below as f64 / dev.data.len() as f64;
-        say(&format!("{share:.3} % of the values lay below black in the noise, cut to black"));
+    if r.below > 0 {
+        say(&format!(
+            "{:.3} % of the values lay below black in the noise, cut to black",
+            100.0 * r.below_share()
+        ));
     }
-    say(&format!("sums: lum {:.9e} c1 {:.9e} c2 {:.9e}", dev.sums[0], dev.sums[1], dev.sums[2]));
-
-    // Under another name until it is whole: a DNG that is there is done.
-    let part = PathBuf::from(format!("{}.part", to.display()));
-    let written = File::create(&part).map_err(|e| format!("{}: {e}", part.display())).and_then(|file| {
-        let software = concat!("xtrans2dng ", env!("CARGO_PKG_VERSION"), " (Mimizan Lab X-Trans)");
-        let mut out = BufWriter::new(file);
-        dng::write(&mut out, &source, decoder.as_ref(), img, dev, !cli.uncompressed, software)?;
-        let file = out.into_inner().map_err(|e| format!("{}: {e}", part.display()))?;
-        file.sync_all().map_err(|e| format!("{}: {e}", part.display()))
-    });
-    if let Err(e) = written.and_then(|()| fs::rename(&part, to).map_err(|e| format!("{}: {e}", to.display())))
-    {
-        let _ = fs::remove_file(&part);
-        return Err(e);
-    }
+    say(&format!("sums: lum {:.9e} c1 {:.9e} c2 {:.9e}", r.sums[0], r.sums[1], r.sums[2]));
     say(&format!(
         "{} x {} pixels to {} in {:.0} s (prior {:.1}, separation {:.1}, colour edges {:.1})",
-        frame.width,
-        frame.height,
+        r.pixels.0,
+        r.pixels.1,
         to.display(),
-        started.elapsed().as_secs_f64(),
+        r.total,
         t[0],
         t[1],
         t[2]

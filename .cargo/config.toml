@@ -1,4 +1,13 @@
+# x86-64-v3 is Haswell / Excavator and everything after: AVX2 and FMA.
+# The loops stay in ordinary f64 order, so a v3 build matches a baseline
+# build bit for bit and just keeps more of each sum in registers.
 # The Windows programs carry the Visual C++ runtime inside them. A machine
 # without the redistributable can start them.
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=x86-64-v3"]
+
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+crt-static"]
+rustflags = ["-C", "target-feature=+crt-static", "-C", "target-cpu=x86-64-v3"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "target-cpu=x86-64-v3"]

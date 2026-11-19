@@ -41,8 +41,9 @@ pub fn reflect(i: isize, n: usize) -> usize {
 /// of accumulators (independent lanes vectorise; a per-pixel dot product does
 /// not, since f64 sums are never reassociated). Every output still sums its
 /// taps in index order t = 0..n, so results are deterministic and independent
-/// of the thread count.
-const LANES: usize = 16;
+/// of the thread count. Sixty-four sums stay in flight together, enough
+/// to cover the latency of one addition.
+const LANES: usize = 64;
 /// Output rows per band in the column pass: the band plus its tap halo of
 /// source rows, one x-strip wide, stays in L2.
 const Y_BAND: usize = 32;

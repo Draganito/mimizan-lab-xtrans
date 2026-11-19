@@ -100,6 +100,7 @@ use crate::plane::{Plane, Rgb};
 use rayon::prelude::*;
 use rustfft::num_complex::Complex;
 use rustfft::{Fft, FftPlanner};
+use std::cell::RefCell;
 use std::f64::consts::PI;
 use std::sync::Arc;
 
@@ -466,23 +467,40 @@ impl Fft2 {
     fn run(&self, buf: &mut [C64], inverse: bool) {
         let (w, h) = (self.w, self.h);
         let (fx, fy) = if inverse { (&self.iw, &self.ih) } else { (&self.fw, &self.fh) };
-        fx.process(buf);
-        let scale = if inverse { 1.0 / (w * h) as f64 } else { 1.0 };
-        let mut cols = vec![C64::new(0.0, 0.0); Self::COLUMNS * h];
-        for x0 in (0..w).step_by(Self::COLUMNS) {
-            let n = Self::COLUMNS.min(w - x0);
-            for (y, row) in buf.chunks(w).enumerate() {
-                for (j, v) in row[x0..x0 + n].iter().enumerate() {
-                    cols[j * h + y] = *v;
-                }
-            }
-            fy.process(&mut cols[..n * h]);
-            for (y, row) in buf.chunks_mut(w).enumerate() {
-                for (j, v) in row[x0..x0 + n].iter_mut().enumerate() {
-                    *v = cols[j * h + y] * scale;
-                }
-            }
+        // One scratch and one column buffer per thread, kept for the next
+        // tile. Asking for them every column group costs as much as a few
+        // butterflies, and the values that come out do not depend on it.
+        thread_local! {
+            static ROOM: RefCell<(Vec<C64>, Vec<C64>)> = RefCell::new((Vec::new(), Vec::new()));
         }
+        ROOM.with(|room| {
+            let mut room = room.borrow_mut();
+            let need = fx.get_inplace_scratch_len().max(fy.get_inplace_scratch_len());
+            if room.0.len() < need {
+                room.0.resize(need, C64::new(0.0, 0.0));
+            }
+            let cols_need = Self::COLUMNS * h;
+            if room.1.len() < cols_need {
+                room.1.resize(cols_need, C64::new(0.0, 0.0));
+            }
+            let (scratch, cols) = &mut *room;
+            fx.process_with_scratch(buf, scratch);
+            let scale = if inverse { 1.0 / (w * h) as f64 } else { 1.0 };
+            for x0 in (0..w).step_by(Self::COLUMNS) {
+                let n = Self::COLUMNS.min(w - x0);
+                for (y, row) in buf.chunks(w).enumerate() {
+                    for (j, v) in row[x0..x0 + n].iter().enumerate() {
+                        cols[j * h + y] = *v;
+                    }
+                }
+                fy.process_with_scratch(&mut cols[..n * h], scratch);
+                for (y, row) in buf.chunks_mut(w).enumerate() {
+                    for (j, v) in row[x0..x0 + n].iter_mut().enumerate() {
+                        *v = cols[j * h + y] * scale;
+                    }
+                }
+            }
+        });
     }
 
     const COLUMNS: usize = 16;
@@ -866,9 +884,19 @@ impl Work {
     }
 }
 
+/// Tiles transformed at once. Eight at a time kept the cache, and the
+/// values do not depend on the count.
+const FFT_AT_ONCE: usize = 8;
+
 /// The spectra of the windows of `m` at `at`.
 fn spectra(m: &Plane, fft: &Fft2, at: &[(isize, isize)]) -> Vec<Vec<C64>> {
-    at.par_iter().map(|&(ox, oy)| spectrum(m, fft, ox, oy)).collect()
+    let mut out = vec![Vec::new(); at.len()];
+    for (src, dst) in at.chunks(FFT_AT_ONCE).zip(out.chunks_mut(FFT_AT_ONCE)) {
+        dst.par_iter_mut().zip(src).for_each(|(slot, &(ox, oy))| {
+            *slot = spectrum(m, fft, ox, oy);
+        });
+    }
+    out
 }
 
 /// The least-squares demultiplexer on no more than [`AT_ONCE`] windows
@@ -997,7 +1025,9 @@ fn tiles_lmmse(r: &Ready, specs: &[Vec<C64>], work: &mut Work) {
             }
         }
     });
-    work.bufs[..used].par_iter_mut().for_each(|z| r.fft.run(z, true));
+    for chunk in work.bufs[..used].chunks_mut(FFT_AT_ONCE) {
+        chunk.par_iter_mut().for_each(|z| r.fft.run(z, true));
+    }
 }
 
 /// The windows of the frame [`fit_prior`] looks at: their spectra, and the

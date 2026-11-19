@@ -28,22 +28,28 @@ pub struct Memory {
     pub swap: u64,
 }
 
+/// macOS makes its swap as it is needed: how much of it is free now says
+/// nothing about how much a program will be given. Linux and Windows
+/// have a swap of a size, and refuse what is beyond it.
+pub const SWAP_GROWS: bool = cfg!(target_os = "macos");
+
 impl Memory {
     pub fn read(system: &mut System) -> Self {
         system.refresh_memory();
-        Self { free: system.available_memory(), swap: system.free_swap() }
+        let swap = if SWAP_GROWS { u64::MAX } else { system.free_swap() };
+        Self { free: system.available_memory(), swap }
     }
 
     /// Whether a picture that takes `need` may be begun. A program that
     /// is given no memory ends on the spot, and one that swaps several GB
     /// holds the whole computer up, so it is asked before.
     pub fn takes(self, need: u64, use_swap: bool) -> Result<(), String> {
-        let room = if use_swap { self.free + self.swap } else { self.free };
+        let with_swap = self.free.saturating_add(self.swap);
+        let room = if use_swap { with_swap } else { self.free };
         if need <= room {
             return Ok(());
         }
-        let more =
-            if !use_swap && need <= self.free + self.swap { " (the swap would hold the rest)" } else { "" };
+        let more = if !use_swap && need <= with_swap { " (the swap would hold the rest)" } else { "" };
         Err(format!("needs about {} of memory, {} are free{more}", gb(need), gb(self.free)))
     }
 }
@@ -173,6 +179,13 @@ mod tests {
         assert_eq!(memory.takes(xt5, true), Ok(()));
         let small = Memory { free: 3_000_000_000, swap: 1_000_000_000 };
         assert_eq!(small.takes(xt4, true).unwrap_err(), "needs about 7.8 GB of memory, 3.0 GB are free");
+        // A Mac with 8 GB: its swap has no end the program could ask for.
+        let mac = Memory { free: 3_000_000_000, swap: u64::MAX };
+        assert_eq!(mac.takes(xt5, true), Ok(()));
+        assert_eq!(
+            mac.takes(xt4, false).unwrap_err(),
+            "needs about 7.8 GB of memory, 3.0 GB are free (the swap would hold the rest)"
+        );
     }
 
     #[test]

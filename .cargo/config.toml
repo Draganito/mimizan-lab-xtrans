@@ -1,0 +1,4 @@
+# The Windows programs carry the Visual C++ runtime inside them. A machine
+# without the redistributable can start them.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

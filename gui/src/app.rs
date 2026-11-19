@@ -684,9 +684,16 @@ impl App {
         if plain(Key::Num1) {
             self.full_size();
         }
-        if plain(Key::Delete) {
+        // A Mac's keyboard has the backward delete alone.
+        if plain(Key::Delete) || plain(Key::Backspace) {
             self.remove_current();
         }
+    }
+
+    /// The keys of a shortcut as this system writes them: Ctrl+O, and ⌘O
+    /// on a Mac.
+    fn shortcut(ui: &Ui, key: Key) -> String {
+        ui.ctx().format_shortcut(&egui::KeyboardShortcut::new(Modifiers::COMMAND, key))
     }
 
     /// One pixel of the picture on one of the screen.
@@ -700,7 +707,8 @@ impl App {
     fn toolbar(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
-            if ui.add(Chip::action("Add files…").key("Ctrl+O")).clicked() {
+            let (open, all) = (Self::shortcut(ui, Key::O), Self::shortcut(ui, Key::A));
+            if ui.add(Chip::action("Add files…").key(&open)).clicked() {
                 self.open_dialog(Pick::Files);
             }
             if ui.add(Chip::action("Add folder…")).clicked() {
@@ -709,7 +717,7 @@ impl App {
             theme::sep(ui);
             theme::caption(ui, "Mark");
             let some = !self.queue.entries.is_empty();
-            if ui.add_enabled(some, Chip::action("All").key("Ctrl+A")).clicked() {
+            if ui.add_enabled(some, Chip::action("All").key(&all)).clicked() {
                 self.queue.mark_where(|_| true);
             }
             if ui.add_enabled(some, Chip::action("None")).clicked() {
@@ -918,11 +926,15 @@ impl App {
                 ui.checkbox(&mut s.uncompressed, "Uncompressed").on_hover_text(
                     "The DNG is compressed without loss. Without compression it is about twice as large.",
                 );
-                ui.checkbox(&mut s.use_swap, "Use the swap when memory is short").on_hover_text(
-                "A picture takes about 0.3 GB of memory for every megapixel. A file that needs more than \
-                 is free is left out; with this it is begun as long as the swap holds the rest, which is \
-                 slow and holds up other programs.",
-            );
+                let rest = if work::SWAP_GROWS {
+                    "with this it is begun all the same and macOS swaps the rest"
+                } else {
+                    "with this it is begun as long as the swap holds the rest"
+                };
+                ui.checkbox(&mut s.use_swap, "Use the swap when memory is short").on_hover_text(format!(
+                    "A picture takes about 0.3 GB of memory for every megapixel. A file that needs more \
+                     than is free is left out; {rest}, which is slow and holds up other programs."
+                ));
                 if choose {
                     self.open_dialog(Pick::Output);
                 }
@@ -1258,10 +1270,14 @@ impl App {
         let Some(shot) = &self.shot else { return };
         let (to, when, begun, ready) = (shot.to.clone(), shot.when, shot.begun, shot.ready);
         ctx.request_repaint();
-        let read = !self.queue.entries.is_empty()
-            && self.queue.entries.iter().all(|e| !matches!(e.info, Read::Pending))
-            && self.stage.preview.is_some()
-            && !self.stage.developing;
+        // A window started without files has nothing to wait for: its
+        // picture shows that it opens and draws.
+        let empty = self.queue.entries.is_empty();
+        let read = (empty && when == When::Idle)
+            || !empty
+                && self.queue.entries.iter().all(|e| !matches!(e.info, Read::Pending))
+                && self.stage.preview.is_some()
+                && !self.stage.developing;
         if when != When::Idle && !begun {
             if read {
                 self.convert();

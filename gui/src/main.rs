@@ -67,6 +67,16 @@ fn main() -> eframe::Result {
             .with_min_inner_size(size)
             .with_max_inner_size(size);
     }
-    let options = eframe::NativeOptions { viewport, ..Default::default() };
+    #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
+    let mut options = eframe::NativeOptions { viewport, ..Default::default() };
+    // Windows: DirectX 12 and nothing else, so the window does not look
+    // for an OpenGL or Vulkan driver that a virtual machine does not have.
+    #[cfg(target_os = "windows")]
+    {
+        options.renderer = eframe::Renderer::Wgpu;
+        let mut wgpu = eframe::egui_wgpu::WgpuSetupCreateNew::without_display_handle();
+        wgpu.instance_descriptor.backends = eframe::wgpu::Backends::DX12;
+        options.wgpu_options.wgpu_setup = eframe::egui_wgpu::WgpuSetup::CreateNew(wgpu);
+    }
     eframe::run_native(NAME, options, Box::new(move |cc| Ok(Box::new(app::App::new(cc, initial)))))
 }

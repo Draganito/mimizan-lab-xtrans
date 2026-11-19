@@ -91,7 +91,7 @@ A 26-megapixel file takes about three quarters of a minute and close to 8 GB of 
 
 Where a channel is burnt out, the sensor says nothing about the colour. By default the balanced mosaic is cut at the level the first channel burns out at: a burnt-out area comes out flat and neutral, and no false colour spreads from it into what lies around it.
 
-`--keep-highlights` leaves the mosaic as recorded there. The channels that still hold something above that level stay in the DNG, for a raw developer's highlight recovery. The prior is found on the cut mosaic either way.
+`--keep-highlights` leaves the mosaic as recorded there. The channels that still hold something above that level stay in the DNG, for a raw developer's highlight recovery. The prior is found on the cut mosaic either way. The window cuts both at white, so they look the same there; the difference is only in the file.
 
 ## Where the DNG opens
 

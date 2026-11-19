@@ -50,7 +50,7 @@ cargo build --release -p mimizan-lab-xtrans-gui
 target/release/xtrans2dng-gui
 ```
 
-It was written and is used on Linux. The Windows and the macOS programs are built on GitHub's machines, where their tests pass and the window opens from the unpacked archive; neither has converted a camera's file there, and neither has been used by hand yet.
+It was written on Linux. The Windows and the macOS programs are built on GitHub's machines, where their tests pass and the window opens from the unpacked archive, and both have been tried by hand since.
 
 ## Use it
 
@@ -122,7 +122,6 @@ It is as sharp as 3-pass with about a third of its false colour and half its col
 - **How it stands against other X-Trans demosaicers** than RawTherapee's 3-pass, and on other pictures than one test chart and one landscape.
 - **Other cameras.** Only the two above were tried. The file is decoded by [rawler](https://github.com/dnglab/dnglab); a RAF it reads and whose tile is an X-Trans one should convert, and a file with another mosaic is refused ("not an X-Trans mosaic").
 - **Other raw developers** than the three above.
-- **Windows and macOS.** Built and tested without a hand on them, as said under [Get it](#get-it).
 
 ## How it works
 

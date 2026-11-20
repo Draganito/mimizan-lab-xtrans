@@ -7,6 +7,7 @@
 //! developer opens like any other ([`convert`], [`dng`]). [`file`] is the
 //! whole way from one file to the other.
 
+pub mod compare;
 pub mod convert;
 pub mod dng;
 pub mod file;

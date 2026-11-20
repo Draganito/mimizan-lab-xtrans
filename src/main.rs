@@ -42,6 +42,20 @@ struct Cli {
     /// Say nothing but errors.
     #[arg(short, long)]
     quiet: bool,
+
+    /// Write a comparison with the installed RawTherapee instead of a DNG.
+    /// Both pictures are 16-bit TIFF, developed with one profile.
+    /// RawTherapee uses Markesteijn 3-pass.
+    #[arg(long)]
+    compare: bool,
+
+    /// False colour suppression on that 3-pass, from 0 to 5. 0 is none.
+    #[arg(long, value_parser = 0..=5, requires = "compare")]
+    suppression: Option<u8>,
+
+    /// The rawtherapee-cli to use. Looked up when it is not given.
+    #[arg(long, value_name = "PATH", requires = "compare")]
+    rawtherapee: Option<PathBuf>,
 }
 
 /// Where the DNG of `raf` goes.
@@ -103,9 +117,46 @@ fn convert_one(raf: &Path, to: &Path, cli: &Cli) -> Result<(), String> {
     Ok(())
 }
 
+fn compare_one(raf: &Path, cli: &Cli) -> Result<(), String> {
+    let say = |s: &str| {
+        if !cli.quiet {
+            eprintln!("  {s}");
+        }
+    };
+    let program = mimizan_lab_xtrans::compare::find(cli.rawtherapee.as_deref())
+        .ok_or("RawTherapee was not found (rawtherapee-cli)")?;
+    let steps = cli.suppression.unwrap_or(0);
+    let made = mimizan_lab_xtrans::compare::make(raf, &program, steps, &say)?;
+    say(&format!(
+        "{} x {} pixels, RawTherapee {}, suppression {}, in {}",
+        made.pixels.0,
+        made.pixels.1,
+        made.version,
+        made.steps,
+        made.folder.display()
+    ));
+    Ok(())
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let mut failed = 0;
+    if cli.compare {
+        for raf in &cli.files {
+            if !cli.quiet {
+                eprintln!("{}", raf.display());
+            }
+            if let Err(e) = compare_one(raf, &cli) {
+                eprintln!("{}: {e}", raf.display());
+                failed += 1;
+            }
+        }
+        if failed > 0 {
+            eprintln!("{failed} of {} not compared", cli.files.len());
+            return ExitCode::FAILURE;
+        }
+        return ExitCode::SUCCESS;
+    }
     for raf in &cli.files {
         if !cli.quiet {
             eprintln!("{}", raf.display());

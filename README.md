@@ -69,6 +69,9 @@ Every RAF gives a DNG of its name beside it. A DNG that is there already is left
 | `--keep-highlights` | Leave burnt-out areas as recorded (see below). |
 | `--uncompressed` | Write the picture uncompressed. |
 | `-q`, `--quiet` | Say nothing but errors. |
+| `--compare` | Write a comparison with the installed RawTherapee, as 16-bit TIFF, instead of a DNG. |
+| `--suppression <0-5>` | False colour suppression on RawTherapee's 3-pass. 0 is none. With `--compare`. |
+| `--rawtherapee <PATH>` | The `rawtherapee-cli` to use. Looked up when it is not given. |
 
 While it works it says what it found: the camera, the prior, the share of burnt-out photosites, the times. A DNG is written under another name and renamed when it is whole, so a DNG that is there is finished. When a file fails the others are still converted, and the command ends with an error.
 
@@ -80,6 +83,7 @@ While it works it says what it found: the camera, the prior, the share of burnt-
 
 - **Add** RAFs or folders with the buttons, or drop them on the window. Each file shows the camera's preview and what it says about itself: camera, exposure, lens, sensor, and the size the DNG will have.
 - **Mark** the files to convert: the box in a row, Space, Shift for a range, or All, None and Without DNG in the toolbar. A file comes in marked unless its DNG is there already.
+- **Compare**, when RawTherapee is installed. Optional, and not part of the conversion. It puts this program's picture beside RawTherapee's 3-pass of the same file. RawTherapee develops both with one profile — camera white balance, no tone curve, no sharpening, no noise reduction — so the only difference is the demosaic. False colour suppression on that 3-pass can be off, or from 0 to 5; it does not change this program's picture. The two frames are written as 16-bit TIFF beside the RAF, in a folder `<name> compare`, cropped to the same pixels, with `how.txt` and the profile. The window then opens them side by side: the wheel enlarges, the drag moves, and both stay on the same place. A conversion that is running is left to finish first.
 - **Convert** runs the marked files one after the other. The row and the panel at the right say how far the file in work is; "Stop after this file" ends the run there.
 - **When a file is done** its DNG is read back and shown in the preview's place. To be looked at it is balanced, taken to sRGB by its own matrix, made as light as the preview and given a mild contrast; the file is not touched by that. `D` goes between preview and DNG, the wheel enlarges, `1` is one pixel on one, `F` the whole picture.
 

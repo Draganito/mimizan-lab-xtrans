@@ -18,7 +18,7 @@ rawler = "0.8"
 rayon = "1.12"
 egui = "0.36"
 egui-file-dialog = "0.15"
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff"] }
 # Free memory before a file is begun: a picture takes several GB.
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 

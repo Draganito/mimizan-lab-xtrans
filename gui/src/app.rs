@@ -9,10 +9,12 @@ use crate::work::{self, Job, Memory, Told, Worker};
 use egui::{
     pos2, vec2, Color32, Key, Modifiers, Rect, RichText, Sense, TextureHandle, TextureOptions, Ui, Vec2,
 };
-use egui_file_dialog::{DialogState, FileDialog, OpeningMode};
+use egui_file_dialog::{DialogState, FileDialog, Filter, OpeningMode};
 use mimizan_lab_xtrans::file::Report;
 use std::collections::VecDeque;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use sysinfo::System;
@@ -122,12 +124,97 @@ struct Run {
     since: Instant,
 }
 
+/// What the comparison thread says.
+enum CompareMsg {
+    Step(String),
+    Done(Result<Shown, String>),
+}
+
+/// The two pictures, ready to be looked at. The files stay on disk; the
+/// window reads the part it shows.
+struct Shown {
+    folder: PathBuf,
+    version: String,
+    steps: u8,
+    left: PathBuf,
+    right: PathBuf,
+    /// Width and height of each picture, pixels. The two match.
+    size: (usize, usize),
+}
+
+/// The two pictures of one view, red green blue, or why the read failed.
+type ReadPictures = Result<(Vec<u8>, Vec<u8>), String>;
+
+/// The comparison window: both pictures, moved and enlarged as one.
+struct Pair {
+    title: String,
+    right_title: String,
+    left_path: PathBuf,
+    right_path: PathBuf,
+    /// Width and height of each picture, pixels.
+    size: Vec2,
+    fit: bool,
+    /// Width of one picture on the screen, points.
+    width: f32,
+    /// The point of the picture at the middle of its pane, of 1.
+    centre: Vec2,
+    full_width: f32,
+    scale: f32,
+    /// The part last read, and the two textures of it.
+    shown: Option<(View, TextureHandle, TextureHandle)>,
+    /// A read that has not come back. The view is the one that was asked for.
+    loading: Option<(View, Receiver<ReadPictures>)>,
+    /// The view whose read failed, so it is not asked again until the place changes.
+    failed: Option<View>,
+    miss: Option<String>,
+}
+
+impl Pair {
+    fn new(shown: Shown) -> Self {
+        let right_title = if shown.steps == 0 {
+            format!("RawTherapee {} · 3-pass · false colour left in", shown.version)
+        } else {
+            format!("RawTherapee {} · 3-pass · false colour cleaned, strength {}", shown.version, shown.steps)
+        };
+        let title = shown
+            .folder
+            .file_name()
+            .map(|n| format!("Compare · {}", n.to_string_lossy()))
+            .unwrap_or_else(|| "Compare".into());
+        Self {
+            title,
+            right_title,
+            left_path: shown.left,
+            right_path: shown.right,
+            size: vec2(shown.size.0 as f32, shown.size.1 as f32),
+            fit: true,
+            width: 0.0,
+            centre: vec2(0.5, 0.5),
+            full_width: 0.0,
+            scale: 0.0,
+            shown: None,
+            loading: None,
+            failed: None,
+            miss: None,
+        }
+    }
+}
+
+/// A comparison is being made. It is not a conversion.
+struct Comparing {
+    rx: Receiver<CompareMsg>,
+    words: String,
+    since: Instant,
+}
+
 /// What the dialog is open for.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Pick {
     Files,
     Folder,
     Output,
+    /// `rawtherapee-cli`, when it is not found on its own.
+    Program,
 }
 
 /// When the window takes a picture of itself (`XTRANS_GUI_SHOT`).
@@ -188,6 +275,13 @@ pub struct App {
     loader: Loader,
     worker: Worker,
     run: Option<Run>,
+    /// The optional RawTherapee comparison. It does not convert.
+    comparing: Option<Comparing>,
+    /// The comparison window, once the two pictures are ready.
+    pair: Option<Pair>,
+    /// The `rawtherapee-cli` last looked up, and the choice that lookup used.
+    rt_program: Option<PathBuf>,
+    rt_for: Option<Option<PathBuf>>,
     /// What last happened, said at the right of the toolbar.
     note: Option<String>,
     stage: Stage,
@@ -224,6 +318,95 @@ fn duration(seconds: f64) -> String {
     } else {
         format!("{} min {} s", s / 60, s % 60)
     }
+}
+
+/// The longest side of a picture the comparison window holds, pixels.
+const VIEW_CAP: usize = 4096;
+
+/// A rectangle of a picture, and how many screen pixels it was read as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct View {
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    out_w: usize,
+    out_h: usize,
+}
+
+/// The part of `placed` that lies in `pane`, as pixels of a picture of `image`.
+fn visible_view(image: Vec2, placed: Rect, pane: Rect, pixels_per_point: f32) -> Option<View> {
+    let vis = placed.intersect(pane);
+    if vis.width() < 1.0 || vis.height() < 1.0 || placed.width() < 1.0 || placed.height() < 1.0 {
+        return None;
+    }
+    let iw = image.x.max(1.0);
+    let ih = image.y.max(1.0);
+    let x0 = ((vis.min.x - placed.min.x) / placed.width() * iw).floor().clamp(0.0, iw - 1.0);
+    let y0 = ((vis.min.y - placed.min.y) / placed.height() * ih).floor().clamp(0.0, ih - 1.0);
+    let x1 = ((vis.max.x - placed.min.x) / placed.width() * iw).ceil().clamp(x0 + 1.0, iw);
+    let y1 = ((vis.max.y - placed.min.y) / placed.height() * ih).ceil().clamp(y0 + 1.0, ih);
+    Some(View {
+        x: x0 as u32,
+        y: y0 as u32,
+        w: (x1 - x0) as u32,
+        h: (y1 - y0) as u32,
+        out_w: (vis.width() * pixels_per_point).round().max(1.0) as usize,
+        out_h: (vis.height() * pixels_per_point).round().max(1.0) as usize,
+    })
+}
+
+/// `need`, plus a margin when that still fits in [`VIEW_CAP`].
+fn wanted(need: View, image_w: u32, image_h: u32) -> View {
+    let mx = need.w / 4;
+    let my = need.h / 4;
+    let x = need.x.saturating_sub(mx);
+    let y = need.y.saturating_sub(my);
+    let x1 = need.x.saturating_add(need.w).saturating_add(mx).min(image_w.max(1));
+    let y1 = need.y.saturating_add(need.h).saturating_add(my).min(image_h.max(1));
+    let w = x1.saturating_sub(x).max(1);
+    let h = y1.saturating_sub(y).max(1);
+    let sx = need.out_w as f32 / need.w.max(1) as f32;
+    let sy = need.out_h as f32 / need.h.max(1) as f32;
+    let grown = View {
+        x,
+        y,
+        w,
+        h,
+        out_w: (w as f32 * sx).round().max(1.0) as usize,
+        out_h: (h as f32 * sy).round().max(1.0) as usize,
+    };
+    if grown.out_w.max(grown.out_h) > VIEW_CAP {
+        cap_view(need)
+    } else {
+        grown
+    }
+}
+
+fn cap_view(mut view: View) -> View {
+    let long = view.out_w.max(view.out_h);
+    if long > VIEW_CAP {
+        let factor = VIEW_CAP as f32 / long as f32;
+        view.out_w = (view.out_w as f32 * factor).round().max(1.0) as usize;
+        view.out_h = (view.out_h as f32 * factor).round().max(1.0) as usize;
+    }
+    view
+}
+
+/// `have` already shows `need`: it covers those pixels, about as finely.
+fn serves(have: View, need: View) -> bool {
+    let past_x = have.x > need.x || have.x.saturating_add(have.w) < need.x.saturating_add(need.w);
+    let past_y = have.y > need.y || have.y.saturating_add(have.h) < need.y.saturating_add(need.h);
+    if past_x || past_y {
+        return false;
+    }
+    let have_d = have.out_w as f32 / have.w.max(1) as f32;
+    let need_d = need.out_w as f32 / need.w.max(1) as f32;
+    have_d + 0.001 >= need_d * 0.8
+}
+
+fn satisfied(loaded: View, need: View, image_w: u32, image_h: u32) -> bool {
+    loaded == wanted(need, image_w, image_h) || serves(loaded, need)
 }
 
 /// "1 file", "3 files".
@@ -290,6 +473,7 @@ impl App {
         theme::apply(ctx);
         let mut dialog = FileDialog::new()
             .add_file_filter_extensions("Fuji RAF", vec!["raf", "RAF", "Raf"])
+            .add_file_filter("All files", Filter::new(|_: &Path| true))
             .default_file_filter("Fuji RAF");
         dialog.config_mut().opening_mode = OpeningMode::AlwaysInitialDir;
         let mut system = System::new();
@@ -306,6 +490,10 @@ impl App {
             loader: Loader::spawn(ctx.clone()),
             worker: Worker::spawn(ctx.clone()),
             run: None,
+            comparing: None,
+            pair: None,
+            rt_program: None,
+            rt_for: None,
             note: None,
             stage: Stage::default(),
             dialog,
@@ -444,6 +632,31 @@ impl App {
                 Told::Done { id, to, result } => self.finished(id, to, result),
             }
         }
+        loop {
+            let message = self.comparing.as_ref().map(|run| run.rx.try_recv());
+            match message {
+                Some(Ok(CompareMsg::Step(words))) => {
+                    if let Some(run) = &mut self.comparing {
+                        run.words = words;
+                    }
+                }
+                Some(Ok(CompareMsg::Done(result))) => {
+                    self.comparing = None;
+                    match result {
+                        Ok(shown) => {
+                            self.note = Some(format!("comparison in {}", shown.folder.display()));
+                            self.pair = Some(Pair::new(shown));
+                        }
+                        Err(why) => self.note = Some(why),
+                    }
+                }
+                Some(Err(TryRecvError::Disconnected)) => {
+                    self.note = Some("the comparison stopped".into());
+                    self.comparing = None;
+                }
+                Some(Err(TryRecvError::Empty)) | None => break,
+            }
+        }
     }
 
     /// The thread is through with a file.
@@ -579,6 +792,12 @@ impl App {
     fn open_dialog(&mut self, pick: Pick) {
         let from = match pick {
             Pick::Output => self.settings.folder.clone().or_else(|| self.settings.last_dir.clone()),
+            Pick::Program => self
+                .settings
+                .rawtherapee
+                .as_ref()
+                .and_then(|p| p.parent().map(Path::to_path_buf))
+                .or_else(|| self.settings.last_dir.clone()),
             Pick::Files | Pick::Folder => self.settings.last_dir.clone(),
         };
         if let Some(dir) = from.filter(|d| d.is_dir()).or_else(settings::home) {
@@ -587,6 +806,7 @@ impl App {
         match pick {
             Pick::Files => self.dialog.pick_multiple(),
             Pick::Folder | Pick::Output => self.dialog.pick_directory(),
+            Pick::Program => self.dialog.pick_file(),
         }
         self.picking = Some(pick);
     }
@@ -609,6 +829,11 @@ impl App {
                 if let Some(folder) = self.dialog.take_picked() {
                     self.settings.folder = Some(folder);
                     self.settings.into_folder = true;
+                }
+            }
+            Pick::Program => {
+                if let Some(path) = self.dialog.take_picked() {
+                    self.settings.rawtherapee = Some(path);
                 }
             }
         }
@@ -1041,9 +1266,14 @@ impl App {
                     0 => "Convert".to_owned(),
                     n => format!("Convert {}", files(n)),
                 };
+                let busy = self.comparing.is_some();
                 convert = ui
-                    .add_enabled(!takes.is_empty(), Chip::keep(&label).wide(width).height(30.0))
-                    .on_disabled_hover_text("Mark the files that are to be converted")
+                    .add_enabled(!takes.is_empty() && !busy, Chip::keep(&label).wide(width).height(30.0))
+                    .on_disabled_hover_text(if busy {
+                        "A comparison is running"
+                    } else {
+                        "Mark the files that are to be converted"
+                    })
                     .clicked();
             }
         });
@@ -1071,7 +1301,202 @@ impl App {
             ui.spacing_mut().item_spacing.y = 8.0;
             self.file_panel(ui);
             self.dng_panel(ui);
+            self.compare_panel(ui);
         });
+    }
+
+    /// The RawTherapee command, looked up again only when the choice changes.
+    fn rawtherapee_program(&mut self) -> Option<PathBuf> {
+        let chosen = self.settings.rawtherapee.clone();
+        if self.rt_for.as_ref() != Some(&chosen) {
+            self.rt_program = mimizan_lab_xtrans::compare::find(chosen.as_deref());
+            self.rt_for = Some(chosen);
+        }
+        self.rt_program.clone()
+    }
+
+    /// Beside the conversion, and not part of it. One file, the one looked at.
+    fn compare_panel(&mut self, ui: &mut Ui) {
+        let mut choose = false;
+        let mut go = false;
+        theme::panel(
+            ui,
+            "Compare",
+            |_| {},
+            |ui| {
+                ui.add(
+                    egui::Label::new(theme::value(
+                        "The same file, two ways of reading the mosaic. RawTherapee develops both \
+                         pictures with the same settings, so white balance, contrast and sharpness \
+                         match. What differs is only the demosaic: this program, and RawTherapee's 3-pass.",
+                    ))
+                    .wrap(),
+                );
+                ui.add(
+                    egui::Label::new(theme::quiet(
+                        "Saved as 16-bit TIFF beside the RAF. A DNG already beside the RAF is used. \
+                         A window opens with both pictures side by side and reads the part on screen. \
+                         Scroll to enlarge, drag to move. Both stay on the same place.",
+                    ))
+                    .wrap(),
+                );
+                let turned = ui
+                    .checkbox(
+                        &mut self.settings.suppression_on,
+                        "Clean false colour on the RawTherapee picture",
+                    )
+                    .on_hover_text(
+                        "The 3-pass can leave coloured speckles. This smooths them on RawTherapee's \
+                         picture only, from 0 (the least) to 5 (the most). Off leaves them. This \
+                         program's picture is not changed.",
+                    )
+                    .changed();
+                if turned && self.settings.suppression_on && self.settings.suppression == 0 {
+                    self.settings.suppression = 3;
+                }
+                ui.add_enabled_ui(self.settings.suppression_on, |ui| {
+                    ui.add(egui::Slider::new(&mut self.settings.suppression, 0..=5).text("strength"));
+                });
+                let found = self.rawtherapee_program();
+                let shown =
+                    found.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "not found".into());
+                ui.add(egui::Label::new(theme::quiet(&shown)).truncate()).on_hover_text(&shown);
+                ui.horizontal(|ui| {
+                    choose = ui.add(Chip::action("Choose…").height(20.0)).clicked();
+                    if self.settings.rawtherapee.is_some()
+                        && ui.add(Chip::action("Auto").height(20.0)).clicked()
+                    {
+                        self.settings.rawtherapee = None;
+                    }
+                });
+                ui.add_space(4.0);
+                let running = self.comparing.is_some();
+                let converting = self.run.is_some();
+                if let Some(run) = &self.comparing {
+                    let seconds = run.since.elapsed().as_secs_f64();
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(format!("{} · {}", run.words, duration(seconds)))
+                                .color(theme::AMBER),
+                        )
+                        .truncate(),
+                    );
+                    ui.ctx().request_repaint_after(Duration::from_millis(500));
+                }
+                let width = ui.available_width();
+                go = ui
+                    .add_enabled(
+                        found.is_some() && !running && !converting,
+                        Chip::action("Compare this file").wide(width).height(28.0),
+                    )
+                    .on_disabled_hover_text(if found.is_none() {
+                        "RawTherapee was not found. Choose rawtherapee-cli; set the filter to All files."
+                    } else if converting {
+                        "A conversion is running"
+                    } else {
+                        "A comparison is running"
+                    })
+                    .clicked();
+            },
+        );
+        if choose {
+            self.open_dialog(Pick::Program);
+        }
+        if go {
+            let ctx = ui.ctx().clone();
+            self.start_compare(&ctx);
+        }
+    }
+
+    fn start_compare(&mut self, ctx: &egui::Context) {
+        if self.run.is_some() || self.comparing.is_some() {
+            return;
+        }
+        let Some(entry) = self.entry() else {
+            self.note = Some("Choose a file to compare".into());
+            return;
+        };
+        if entry.busy() {
+            return;
+        }
+        let raf = entry.raf.clone();
+        match &entry.info {
+            Read::Ready(info) => match info.picture {
+                Ok((w, h)) => {
+                    // A DNG beside the RAF is developed as it is, so the
+                    // conversion's memory is not needed.
+                    if !mimizan_lab_xtrans::file::beside(&raf).is_file() {
+                        let need = work::needed((w as u64) * (h as u64));
+                        if let Err(why) = self.memory.takes(need, self.settings.use_swap) {
+                            self.note = Some(why);
+                            return;
+                        }
+                    }
+                }
+                Err(ref why) => {
+                    self.note = Some(why.clone());
+                    return;
+                }
+            },
+            Read::Failed(why) => {
+                self.note = Some(why.clone());
+                return;
+            }
+            Read::Pending => {
+                self.note = Some("The file is still being read".into());
+                return;
+            }
+        }
+        let Some(program) = self.rawtherapee_program() else {
+            self.note = Some("RawTherapee was not found".into());
+            return;
+        };
+        let steps = if self.settings.suppression_on { self.settings.suppression.min(5) } else { 0 };
+        let (tx, rx) = mpsc::channel();
+        let ctx = ctx.clone();
+        std::thread::Builder::new()
+            .name("compare".into())
+            .spawn(move || {
+                let say = |words: &str| {
+                    let _ = tx.send(CompareMsg::Step(words.to_owned()));
+                    ctx.request_repaint();
+                };
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    let made = mimizan_lab_xtrans::compare::make(&raf, &program, steps, &say)?;
+                    let folder = made.folder.clone();
+                    let left = folder.join(mimizan_lab_xtrans::compare::OURS);
+                    let right = folder.join(mimizan_lab_xtrans::compare::THEIRS);
+                    let left_size = mimizan_lab_xtrans::compare::tiff_size(&left)
+                        .map_err(|e| format!("{e}. The files are in {}", folder.display()))?;
+                    let right_size = mimizan_lab_xtrans::compare::tiff_size(&right)
+                        .map_err(|e| format!("{e}. The files are in {}", folder.display()))?;
+                    if left_size != right_size {
+                        return Err(format!(
+                            "the two pictures are {} and {}, so they were not shown together. The files are in {}",
+                            by(left_size),
+                            by(right_size),
+                            folder.display()
+                        ));
+                    }
+                    Ok(Shown {
+                        folder,
+                        version: made.version,
+                        steps: made.steps,
+                        left,
+                        right,
+                        size: left_size,
+                    })
+                }));
+                let result = match result {
+                    Ok(result) => result,
+                    Err(_) => Err("the comparison failed".into()),
+                };
+                let _ = tx.send(CompareMsg::Done(result));
+                ctx.request_repaint();
+            })
+            .expect("the comparison thread starts");
+        self.comparing = Some(Comparing { rx, words: "starting".into(), since: Instant::now() });
+        self.note = None;
     }
 
     /// The row under the picture: which of the two is shown, and how large.
@@ -1565,6 +1990,290 @@ impl App {
             .show(ui, |ui| self.stage(ui));
         self.quit_window(&ctx);
         self.take_shot(&ctx);
+        self.show_pair(&ctx);
+    }
+
+    /// The comparison window. It is a real window when the system allows
+    /// one, and both pictures move together.
+    fn show_pair(&mut self, ctx: &egui::Context) {
+        let Some(title) = self.pair.as_ref().map(|pair| pair.title.clone()) else {
+            return;
+        };
+        let dismiss = ctx.show_viewport_immediate(
+            egui::ViewportId::from_hash_of("mimizan-compare"),
+            egui::ViewportBuilder::default()
+                .with_title(title)
+                .with_inner_size([1480.0, 860.0])
+                .with_min_inner_size([800.0, 480.0]),
+            |ui, _| self.pair_contents(ui),
+        );
+        if dismiss {
+            self.pair = None;
+        }
+    }
+
+    fn pair_contents(&mut self, ui: &mut Ui) -> bool {
+        if ui.input(|i| i.viewport().close_requested()) {
+            return true;
+        }
+        let Some(pair) = &mut self.pair else { return false };
+        let mut close = false;
+        let bar = egui::Frame::new().fill(theme::BAR_FILL).inner_margin(egui::Margin::symmetric(8, 5));
+        egui::Panel::top("pair-bar").frame(bar).show_separator_line(false).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                if ui.add(Chip::toggle("Fit", pair.fit).key("F")).clicked() {
+                    pair.fit = true;
+                }
+                let full = !pair.fit && pair.full_width > 0.0 && (pair.width - pair.full_width).abs() < 0.5;
+                if ui.add(Chip::toggle("100 %", full).key("1")).clicked() {
+                    pair.fit = false;
+                    pair.width = pair.full_width;
+                }
+                theme::sep(ui);
+                if pair.scale > 0.0 {
+                    ui.label(theme::quiet(format!("{:.0} %", 100.0 * pair.scale)));
+                }
+                ui.add(
+                    egui::Label::new(theme::quiet(
+                        "Scroll to enlarge, drag to move. Both stay on the same place.",
+                    ))
+                    .truncate(),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.add(Chip::action("Close")).clicked() {
+                        close = true;
+                    }
+                });
+            });
+        });
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(theme::STAGE))
+            .show(ui, |ui| pair.paint(ui));
+        close
+    }
+}
+
+impl Pair {
+    /// One pane's picture, enlarged so the point under the pointer stays.
+    fn zoom_at(
+        &mut self,
+        room: Rect,
+        pointer: egui::Pos2,
+        width: f32,
+        fit_width: f32,
+        widest: f32,
+        aspect: f32,
+    ) {
+        let width = width.clamp(fit_width, widest);
+        if width <= fit_width * 1.001 {
+            self.fit = true;
+            self.width = fit_width;
+            self.centre = vec2(0.5, 0.5);
+            return;
+        }
+        let before = vec2(self.width, self.width * aspect);
+        let under = (pointer - (room.center() - self.centre * before)) / before;
+        let after = vec2(width, width * aspect);
+        self.centre = (room.center() - (pointer - under * after)) / after;
+        self.fit = false;
+        self.width = width;
+    }
+
+    fn paint(&mut self, ui: &mut Ui) {
+        let room = ui.available_rect_before_wrap();
+        let response = ui.allocate_rect(room, Sense::click_and_drag());
+        let gap = 8.0;
+        let label_h = 26.0;
+        let pane_w = ((room.width() - gap) / 2.0).max(1.0);
+        let left_pane = Rect::from_min_size(room.min, vec2(pane_w, room.height()));
+        let right_pane = Rect::from_min_size(
+            pos2(room.min.x + pane_w + gap, room.min.y),
+            vec2(room.width() - pane_w - gap, room.height()),
+        );
+        let image_room = |pane: Rect| {
+            Rect::from_min_size(
+                pos2(pane.min.x, pane.min.y + label_h),
+                vec2(pane.width(), (pane.height() - label_h).max(1.0)),
+            )
+        };
+        let view = image_room(left_pane);
+        let size = self.size;
+        let aspect = size.y / size.x.max(1.0);
+        let fit_width =
+            (view.width() - 2.0 * MARGIN).min((view.height() - 2.0 * MARGIN) / aspect).max(MARGIN);
+        self.full_width = size.x / ui.ctx().pixels_per_point();
+        let widest = (self.full_width * MAX_ZOOM).max(fit_width);
+        let plain = |key: Key| ui.input(|i| i.modifiers.is_none() && i.key_pressed(key));
+        if plain(Key::F) {
+            self.fit = true;
+        }
+        if plain(Key::Num1) {
+            self.fit = false;
+            self.width = self.full_width;
+        }
+        if self.fit || self.width <= fit_width {
+            self.fit = true;
+            self.width = fit_width;
+            self.centre = vec2(0.5, 0.5);
+        }
+        self.width = self.width.min(widest);
+        if let Some(pointer) = response.hover_pos() {
+            let under = image_room(if right_pane.contains(pointer) { right_pane } else { left_pane });
+            let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
+            let factor = (scroll / 300.0).exp() * pinch;
+            if (factor - 1.0).abs() > 1e-4 {
+                self.zoom_at(under, pointer, self.width * factor, fit_width, widest, aspect);
+            }
+            if response.double_clicked() {
+                let to = if self.fit { self.full_width } else { fit_width };
+                self.zoom_at(under, pointer, to, fit_width, widest, aspect);
+            }
+        }
+        let on_screen = vec2(self.width, self.width * aspect);
+        if response.dragged() && !self.fit {
+            self.centre -= response.drag_delta() / on_screen;
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        }
+        let half = view.size() / on_screen / 2.0;
+        for axis in 0..2 {
+            self.centre[axis] =
+                if half[axis] >= 0.5 { 0.5 } else { self.centre[axis].clamp(half[axis], 1.0 - half[axis]) };
+        }
+        self.scale = if self.full_width > 0.0 { self.width / self.full_width } else { 0.0 };
+        let placed = Rect::from_min_size(view.center() - self.centre * on_screen, on_screen);
+        if let Some(need) = visible_view(size, placed, view, ui.ctx().pixels_per_point()) {
+            self.ensure(ui.ctx(), need);
+        }
+        let painter = ui.painter_at(room);
+        painter.rect_filled(
+            Rect::from_min_size(pos2(left_pane.max.x, room.min.y), vec2(gap, room.height())),
+            0.0,
+            Color32::from_gray(18),
+        );
+        let right_title = self.right_title.clone();
+        let miss = self.miss.clone();
+        let shown = self.shown.as_ref().map(|(view, left, right)| (*view, left.id(), right.id()));
+        self.draw_pane(
+            &painter,
+            left_pane,
+            image_room(left_pane),
+            on_screen,
+            "Mimizan Lab X-Trans",
+            shown.as_ref().map(|s| (s.0, s.1)),
+        );
+        self.draw_pane(
+            &painter,
+            right_pane,
+            image_room(right_pane),
+            on_screen,
+            &right_title,
+            shown.as_ref().map(|s| (s.0, s.2)),
+        );
+        if let Some(miss) = miss {
+            painter.text(
+                view.center(),
+                egui::Align2::CENTER_CENTER,
+                miss,
+                egui::FontId::proportional(theme::TEXT),
+                theme::AMBER,
+            );
+        }
+    }
+
+    /// Read the part on screen, when the part already held does not cover it.
+    fn ensure(&mut self, ctx: &egui::Context, need: View) {
+        let image_w = self.size.x.round().max(1.0) as u32;
+        let image_h = self.size.y.round().max(1.0) as u32;
+        let ready = self.loading.as_mut().and_then(|(view, rx)| match rx.try_recv() {
+            Ok(result) => Some((*view, result)),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => Some((*view, Err("the picture could not be read".into()))),
+        });
+        if ready.is_some() {
+            self.loading = None;
+        }
+        if let Some((view, result)) = ready {
+            match result {
+                Ok((left, right)) => {
+                    let lw = view.out_w * view.out_h * 3;
+                    if left.len() == lw && right.len() == lw {
+                        let left = egui::ColorImage::from_rgb([view.out_w, view.out_h], &left);
+                        let right = egui::ColorImage::from_rgb([view.out_w, view.out_h], &right);
+                        self.shown = Some((
+                            view,
+                            ctx.load_texture("compare-left", left, LARGE),
+                            ctx.load_texture("compare-right", right, LARGE),
+                        ));
+                        self.failed = None;
+                        self.miss = None;
+                    } else {
+                        self.failed = Some(view);
+                        self.miss = Some("the picture could not be read".into());
+                    }
+                }
+                Err(why) => {
+                    self.failed = Some(view);
+                    self.miss = Some(why);
+                }
+            }
+        }
+        let ask = wanted(need, image_w, image_h);
+        let covers = self.shown.as_ref().is_some_and(|(held, ..)| satisfied(*held, need, image_w, image_h));
+        if covers || self.loading.is_some() || self.failed == Some(ask) {
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        let left_path = self.left_path.clone();
+        let right_path = self.right_path.clone();
+        let ctx = ctx.clone();
+        std::thread::Builder::new()
+            .name("compare-view".into())
+            .spawn(move || {
+                let read = |path: &Path| {
+                    mimizan_lab_xtrans::compare::screen_window(
+                        path,
+                        (ask.x, ask.y),
+                        (ask.w, ask.h),
+                        (ask.out_w, ask.out_h),
+                    )
+                };
+                let result = read(&left_path).and_then(|left| read(&right_path).map(|right| (left, right)));
+                let _ = tx.send(result);
+                ctx.request_repaint();
+            })
+            .expect("the view thread starts");
+        self.loading = Some((ask, rx));
+        self.miss = None;
+    }
+
+    fn draw_pane(
+        &self,
+        painter: &egui::Painter,
+        pane: Rect,
+        view: Rect,
+        on_screen: Vec2,
+        title: &str,
+        texture: Option<(View, egui::TextureId)>,
+    ) {
+        painter.text(
+            pos2(pane.min.x + 12.0, pane.min.y + 13.0),
+            egui::Align2::LEFT_CENTER,
+            title,
+            egui::FontId::proportional(theme::TEXT),
+            theme::INK_LIT,
+        );
+        let Some((held, texture)) = texture else { return };
+        let placed = Rect::from_min_size(view.center() - self.centre * on_screen, on_screen);
+        let origin = vec2(held.x as f32 / self.size.x.max(1.0), held.y as f32 / self.size.y.max(1.0));
+        let span = vec2(held.w as f32 / self.size.x.max(1.0), held.h as f32 / self.size.y.max(1.0));
+        let rect = Rect::from_min_size(placed.min + origin * placed.size(), span * placed.size());
+        painter.with_clip_rect(view).image(
+            texture,
+            rect,
+            Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+            Color32::WHITE,
+        );
     }
 }
 
@@ -1598,7 +2307,10 @@ impl eframe::App for App {
 
 #[cfg(test)]
 mod tests {
-    use super::{by, duration, file_row, files, megabytes, megapixels, part_of, App, Click, Picture};
+    use super::{
+        by, duration, file_row, files, megabytes, megapixels, part_of, satisfied, serves, visible_view,
+        wanted, App, Click, Picture, View,
+    };
     use crate::queue::{Queue, Read, Status};
     use crate::settings::Settings;
     use egui::{pos2, vec2, Color32, Event, Key, Modifiers, PointerButton, Pos2, Rect};
@@ -1618,6 +2330,27 @@ mod tests {
             ("1 file".to_owned(), "3 files".to_owned(), "0 files".to_owned())
         );
         assert_eq!(part_of(Path::new("/a/b.dng")), Path::new("/a/b.dng.part"));
+    }
+
+    #[test]
+    fn the_window_reads_the_part_on_screen_and_keeps_it_while_it_still_covers() {
+        let image = vec2(2000.0, 1000.0);
+        let placed = Rect::from_min_size(pos2(0.0, 0.0), image);
+        let pane = Rect::from_min_size(pos2(100.0, 50.0), vec2(200.0, 100.0));
+        let need = visible_view(image, placed, pane, 1.0).unwrap();
+        assert_eq!(need, View { x: 100, y: 50, w: 200, h: 100, out_w: 200, out_h: 100 });
+        let held = wanted(need, 2000, 1000);
+        assert!(held.x < need.x && held.y < need.y);
+        assert!(serves(held, need));
+        assert!(satisfied(held, need, 2000, 1000));
+        let shifted = View { x: need.x + 40, ..need };
+        assert!(serves(held, shifted));
+        let away = View { x: 1500, y: 700, ..need };
+        assert!(!serves(held, away));
+        assert!(!satisfied(held, away, 2000, 1000));
+        // The whole picture, seen small, is not given a margin past its edges.
+        let fit = View { x: 0, y: 0, w: 2000, h: 1000, out_w: 400, out_h: 200 };
+        assert_eq!(wanted(fit, 2000, 1000), fit);
     }
 
     /// A folder of its own with files that are named like RAFs and are none.

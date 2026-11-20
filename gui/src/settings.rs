@@ -19,6 +19,12 @@ pub struct Settings {
     pub use_swap: bool,
     /// Where the last files were added from.
     pub last_dir: Option<PathBuf>,
+    /// False colour suppression on RawTherapee's 3-pass. Off leaves it at
+    /// none; the steps stay, from 0 to 5, for the next time it is on.
+    pub suppression_on: bool,
+    pub suppression: u8,
+    /// `rawtherapee-cli`, when it was chosen by hand. Empty is looked up.
+    pub rawtherapee: Option<PathBuf>,
 }
 
 impl Settings {
@@ -48,6 +54,9 @@ impl Settings {
                 "uncompressed" => s.uncompressed = on,
                 "use_swap" => s.use_swap = on,
                 "last_dir" => s.last_dir = path,
+                "suppression_on" => s.suppression_on = on,
+                "suppression" => s.suppression = value.parse().unwrap_or(0).min(5),
+                "rawtherapee" => s.rawtherapee = path.filter(|p| p.is_file()),
                 _ => {}
             }
         }
@@ -62,7 +71,7 @@ impl Settings {
         };
         let on = |b: bool| u8::from(b);
         format!(
-            "into_folder={}\nfolder={}\nforce={}\nkeep_highlights={}\nuncompressed={}\nuse_swap={}\nlast_dir={}\n",
+            "into_folder={}\nfolder={}\nforce={}\nkeep_highlights={}\nuncompressed={}\nuse_swap={}\nlast_dir={}\nsuppression_on={}\nsuppression={}\nrawtherapee={}\n",
             on(self.into_folder),
             path(&self.folder),
             on(self.force),
@@ -70,6 +79,9 @@ impl Settings {
             on(self.uncompressed),
             on(self.use_swap),
             path(&self.last_dir),
+            on(self.suppression_on),
+            self.suppression.min(5),
+            path(&self.rawtherapee),
         )
     }
 
@@ -123,6 +135,9 @@ mod tests {
             uncompressed: true,
             use_swap: true,
             last_dir: Some(PathBuf::from("/pictures/raf")),
+            suppression_on: true,
+            suppression: 3,
+            rawtherapee: None,
         };
         assert_eq!(Settings::parse(&s.text()), s);
         assert_eq!(Settings::parse(&Settings::default().text()), Settings::default());

@@ -1752,9 +1752,11 @@ name = "mimizan-lab-xtrans"
 version = "0.4.3"
 dependencies = [
  "clap",
+ "image",
  "rawler",
  "rayon",
  "rustfft",
+ "tiff",
 ]
 
 [[package]]

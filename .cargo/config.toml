@@ -3,6 +3,8 @@
 # build bit for bit and just keeps more of each sum in registers.
 # The Windows programs carry the Visual C++ runtime inside them. A machine
 # without the redistributable can start them.
+# The starter in launch/ is not built with these flags. It checks the CPU
+# and, on Linux and Windows, says what is missing instead of crashing.
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "target-cpu=x86-64-v3"]
 

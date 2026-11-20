@@ -35,13 +35,15 @@ That installs the `xtrans2dng` command and [the window](#the-window), `xtrans2dn
 
 Windows, 64-bit Intel and AMD: [mimizan-lab-xtrans-0.4.2-x86_64-windows.zip](https://github.com/Draganito/mimizan-lab-xtrans/releases/download/v0.4.2/mimizan-lab-xtrans-0.4.2-x86_64-windows.zip). Unzip it and start `xtrans2dng-gui.exe`; `xtrans2dng.exe` beside it is the command. The programs carry the Visual C++ runtime, and the window draws with DirectX 12 and opens without a terminal. An unsigned download asks SmartScreen for confirmation.
 
+A Linux or Windows build needs AVX2 and FMA. Intel Core processors have had these since Haswell (2013), AMD processors since Excavator (2015), and every Ryzen has them. On a CPU without them the program says so and stops.
+
 Apple silicon: [mimizan-lab-xtrans-0.4.2-aarch64-macos.zip](https://github.com/Draganito/mimizan-lab-xtrans/releases/download/v0.4.2/mimizan-lab-xtrans-0.4.2-aarch64-macos.zip). Unzip it and open `Mimizan Lab X-Trans.app`. The command is `Mimizan Lab X-Trans.app/Contents/MacOS/xtrans2dng`. The programs use what comes with macOS. The download is not signed: if macOS will not open the app, or says it is damaged, open a terminal next to the unzipped app and run this to clear the quarantine flag and sign it locally:
 
 ```bash
 xattr -cr "Mimizan Lab X-Trans.app" && codesign --force --deep -s - "Mimizan Lab X-Trans.app"
 ```
 
-From the source, with Rust 1.88 or later:
+From the source, with Rust 1.88 or later. That binary needs the same CPU. The message is the starter the packages put in front of it (`dist/build_launch.sh`), not this binary:
 
 ```bash
 cargo build --release

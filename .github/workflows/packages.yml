@@ -43,6 +43,9 @@ jobs:
       # the first and takes the window as it lies there.
       - name: The window
         run: cargo build --profile dist -p mimizan-lab-xtrans-gui
+      # Baseline x86-64, so it can report a CPU that cannot run the programs.
+      - name: The starter
+        run: dist/build_launch.sh
       - name: Package
         run: cargo deb --profile dist
       - name: The package installs and the program starts
@@ -53,6 +56,8 @@ jobs:
           sudo dpkg -i "$deb"
           test "$(command -v xtrans2dng)" = /usr/bin/xtrans2dng
           xtrans2dng --version
+          test -x /usr/lib/mimizan-lab-xtrans/xtrans2dng
+          test -x /usr/lib/mimizan-lab-xtrans/xtrans2dng-gui
           test "$(command -v xtrans2dng-gui)" = /usr/bin/xtrans2dng-gui
           test "$(xtrans2dng-gui --version | awk '{print $2}')" = "$(xtrans2dng --version | awk '{print $2}')"
           test -s /usr/share/applications/mimizan-lab-xtrans.desktop

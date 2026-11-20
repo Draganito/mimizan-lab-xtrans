@@ -1,0 +1,26 @@
+# Built by dist/build_launch.sh, not by the workspace. The empty table
+# keeps this package out of the parent workspace, whose flags ask for
+# x86-64-v3. This program is baseline x86-64 so it can still run, and say
+# why, on a CPU the other programs crash on.
+[workspace]
+
+[package]
+name = "mimizan-lab-xtrans-launch"
+description = "Starts Mimizan Lab X-Trans after checking the CPU"
+version = "0.4.2"
+edition = "2021"
+rust-version = "1.88"
+license = "GPL-3.0-or-later"
+authors = ["Dragan Bojovic"]
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "xtrans-launch"
+path = "src/bin/xtrans-launch.rs"
+
+[[bin]]
+name = "xtrans-launch-gui"
+path = "src/bin/xtrans-launch-gui.rs"

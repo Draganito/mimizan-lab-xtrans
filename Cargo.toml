@@ -40,11 +40,15 @@ license-file = ["LICENSE", "0"]
 section = "graphics"
 priority = "optional"
 depends = "$auto"
-# The window is the workspace's second package: it is built before
-# `cargo deb` runs (`cargo build --profile dist -p mimizan-lab-xtrans-gui`).
+# The window is the workspace's second package, and the two names in
+# usr/bin are the starter from launch/. Both are built before `cargo deb`
+# runs. The programs themselves are the two files under usr/lib: an older
+# CPU never reaches them.
 assets = [
-    ["target/release/xtrans2dng", "usr/bin/", "755"],
-    ["target/release/xtrans2dng-gui", "usr/bin/", "755"],
+    ["target/launch/release/xtrans-launch", "usr/bin/xtrans2dng", "755"],
+    ["target/launch/release/xtrans-launch-gui", "usr/bin/xtrans2dng-gui", "755"],
+    ["target/release/xtrans2dng", "usr/lib/mimizan-lab-xtrans/xtrans2dng", "755"],
+    ["target/release/xtrans2dng-gui", "usr/lib/mimizan-lab-xtrans/xtrans2dng-gui", "755"],
     ["dist/mimizan-lab-xtrans.desktop", "usr/share/applications/", "644"],
     ["gui/assets/icon-16.png", "usr/share/icons/hicolor/16x16/apps/mimizan-lab-xtrans.png", "644"],
     ["gui/assets/icon-32.png", "usr/share/icons/hicolor/32x32/apps/mimizan-lab-xtrans.png", "644"],

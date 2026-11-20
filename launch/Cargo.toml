@@ -7,7 +7,7 @@
 [package]
 name = "mimizan-lab-xtrans-launch"
 description = "Starts Mimizan Lab X-Trans after checking the CPU"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2021"
 rust-version = "1.88"
 license = "GPL-3.0-or-later"

@@ -1749,7 +1749,7 @@ dependencies = [
 
 [[package]]
 name = "mimizan-lab-xtrans"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "clap",
  "image",
@@ -1761,11 +1761,11 @@ dependencies = [
 
 [[package]]
 name = "mimizan-lab-xtrans-darwin"
-version = "0.4.5"
+version = "0.4.6"
 
 [[package]]
 name = "mimizan-lab-xtrans-gui"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "eframe",
  "egui",

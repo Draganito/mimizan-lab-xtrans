@@ -19,7 +19,7 @@ use image::{ImageBuffer, Rgb};
 
 /// 16-bit RGB. The crate keeps this name private, so it is named here.
 type Rgb16 = ImageBuffer<Rgb<u16>, Vec<u16>>;
-use rawler::decoders::RawDecodeParams;
+use rawler::decoders::{Decoder, RawDecodeParams};
 use rawler::rawsource::RawSource;
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter};
@@ -385,12 +385,31 @@ struct Geo {
     frame_at: (usize, usize, usize, usize),
     raw: (usize, usize),
     crop: (usize, usize, usize, usize),
+    /// Exif orientation. 1 is the file's own pixels, already upright.
+    orientation: u16,
 }
 
-fn geo_of(img: &rawler::RawImage) -> Result<Geo, String> {
+fn geo_of(img: &rawler::RawImage, orientation: u16) -> Result<Geo, String> {
     let frame = convert::frame_of(img)?;
     let crop = img.crop_area.map_or((0, 0, img.width, img.height), |r| (r.p.x, r.p.y, r.d.w, r.d.h));
-    Ok(Geo { frame_at: (frame.x, frame.y, frame.width, frame.height), raw: (img.width, img.height), crop })
+    Ok(Geo {
+        frame_at: (frame.x, frame.y, frame.width, frame.height),
+        raw: (img.width, img.height),
+        crop,
+        orientation,
+    })
+}
+
+/// The Exif orientation. The picture itself reports none: rawler leaves
+/// that field at 1, and the tag travels in the metadata RawTherapee reads.
+fn camera_orientation(decoder: &dyn Decoder, source: &RawSource) -> u16 {
+    let params = RawDecodeParams::default();
+    decoder
+        .raw_metadata(source, &params)
+        .ok()
+        .and_then(|meta| meta.exif.orientation)
+        .filter(|tag| (1..=8).contains(tag))
+        .unwrap_or(1)
 }
 
 /// The DNG beside the RAF, when that file is there.
@@ -408,13 +427,14 @@ fn comparison_dng(raf: &Path, dng_path: &Path, tell: &dyn Fn(&str)) -> Result<Ge
     let source = RawSource::new(raf).map_err(|e| format!("cannot be read: {e}"))?;
     let decoder =
         rawler::get_decoder(&source).map_err(|e| format!("not a raw file this program reads: {e}"))?;
+    let orientation = camera_orientation(decoder.as_ref(), &source);
     if let Some(dng) = existing_dng(raf) {
         tell("using the DNG beside the RAF");
         // The head is enough: the frame is decided before any photosite is read.
         let img = decoder
             .raw_image(&source, &RawDecodeParams::default(), true)
             .map_err(|e| format!("cannot be decoded: {e}"))?;
-        let geo = geo_of(&img)?;
+        let geo = geo_of(&img, orientation)?;
         drop(img);
         drop(decoder);
         drop(source);
@@ -425,7 +445,7 @@ fn comparison_dng(raf: &Path, dng_path: &Path, tell: &dyn Fn(&str)) -> Result<Ge
     let img = decoder
         .raw_image(&source, &RawDecodeParams::default(), false)
         .map_err(|e| format!("cannot be decoded: {e}"))?;
-    let geo = geo_of(&img)?;
+    let geo = geo_of(&img, orientation)?;
     tell("separating luminance and colour");
     let dev = convert::develop_watched(&img, &Settings { keep_highlights: true }, tell, &|_| {})?;
     tell("writing the comparison DNG");
@@ -447,6 +467,7 @@ fn make_in(
     let frame_at = geo.frame_at;
     let raw = geo.raw;
     let crop = geo.crop;
+    let orientation = geo.orientation;
 
     let pp3 = work.join("profile.pp3");
     fs::write(&pp3, profile(steps)).map_err(|e| format!("{}: {e}", pp3.display()))?;
@@ -465,15 +486,22 @@ fn make_in(
     develop(program, &pp3, &dng_path, &dng_tif)?;
 
     tell("writing the pictures");
-    let xtrans = read_rgb16(&dng_tif)?;
-    let therapee = read_rgb16(&raf_tif)?;
-    if (xtrans.width() as usize, xtrans.height() as usize) != (frame_at.2, frame_at.3) {
+    let mut xtrans = read_rgb16(&dng_tif)?;
+    let mut therapee = read_rgb16(&raf_tif)?;
+    let got = (xtrans.width() as usize, xtrans.height() as usize);
+    let frame = (frame_at.2, frame_at.3);
+    // RawTherapee turns both pictures upright. The crop is measured in the
+    // file's own pixels, so that turn comes off, the shared pixels are cut,
+    // and the same turn goes back on. The window then matches the camera.
+    let turned = rawtherapee_turned(frame, got, orientation);
+    if turned {
+        xtrans = turn_back(&xtrans, orientation);
+        therapee = turn_back(&therapee, orientation);
+    }
+    if (xtrans.width() as usize, xtrans.height() as usize) != frame {
         return Err(format!(
             "RawTherapee's picture of the DNG is {} x {}, and the DNG is {} x {}",
-            xtrans.width(),
-            xtrans.height(),
-            frame_at.2,
-            frame_at.3
+            got.0, got.1, frame.0, frame.1
         ));
     }
     let out = (therapee.width() as usize, therapee.height() as usize);
@@ -484,18 +512,56 @@ fn make_in(
     if w == 0 || h == 0 {
         return Err("the two pictures could not be cut to the same pixels".into());
     }
-    let xtrans = image::imageops::crop_imm(&xtrans, dx, dy, w, h).to_image();
-    let therapee = image::imageops::crop_imm(&therapee, left, top, w, h).to_image();
+    let mut xtrans = image::imageops::crop_imm(&xtrans, dx, dy, w, h).to_image();
+    let mut therapee = image::imageops::crop_imm(&therapee, left, top, w, h).to_image();
     if therapee.dimensions() != xtrans.dimensions() {
         return Err("the two pictures came out different sizes".into());
     }
+    if turned {
+        xtrans = turn_upright(&xtrans, orientation);
+        therapee = turn_upright(&therapee, orientation);
+    }
+    let pixels = (xtrans.width() as usize, xtrans.height() as usize);
 
     write_tiff(&folder.join(OURS), xtrans)?;
     write_tiff(&folder.join(THEIRS), therapee)?;
-    let note = note(&version, steps, (w as usize, h as usize), origin.filter(|_| !centred));
+    let note = note(&version, steps, pixels, origin.filter(|_| !centred), turned);
     fs::write(folder.join("how.txt"), note).map_err(|e| format!("{}: {e}", folder.display()))?;
 
-    Ok(Made { folder: folder.to_path_buf(), version, pixels: (w as usize, h as usize), steps })
+    Ok(Made { folder: folder.to_path_buf(), version, pixels, steps })
+}
+
+/// True when RawTherapee wrote the DNG turned upright.
+///
+/// A quarter turn swaps the sides. A half turn keeps them, and is taken
+/// back anyway so the crop stays on the file's own pixels. A mirror is
+/// not a turn: RawTherapee leaves those on the DNG.
+fn rawtherapee_turned(frame: (usize, usize), got: (usize, usize), orientation: u16) -> bool {
+    match orientation {
+        6 | 8 => got == (frame.1, frame.0),
+        3 => got == frame,
+        _ => false,
+    }
+}
+
+/// Take off the turn RawTherapee put on, back to the file's own pixels.
+fn turn_back(image: &Rgb16, orientation: u16) -> Rgb16 {
+    match orientation {
+        3 => image::imageops::rotate180(image),
+        6 => image::imageops::rotate270(image),
+        8 => image::imageops::rotate90(image),
+        _ => image.clone(),
+    }
+}
+
+/// The camera's turn, put back on a crop that was cut in the file's pixels.
+fn turn_upright(image: &Rgb16, orientation: u16) -> Rgb16 {
+    match orientation {
+        3 => image::imageops::rotate180(image),
+        6 => image::imageops::rotate90(image),
+        8 => image::imageops::rotate270(image),
+        _ => image.clone(),
+    }
 }
 
 /// Cuts of the two pictures: left and top in the DNG picture, left and top
@@ -534,15 +600,19 @@ fn link_or_copy(from: &Path, to: &Path) -> Result<(), String> {
 
 fn develop(program: &Path, pp3: &Path, input: &Path, output: &Path) -> Result<(), String> {
     // -c is last. -t -b16 is 16-bit TIFF, uncompressed, so nothing is lost.
-    let status = Command::new(program)
-        .args(["-q", "-o"])
-        .arg(output)
-        .arg("-p")
-        .arg(pp3)
-        .args(["-t", "-b16", "-Y", "-c"])
-        .arg(input)
-        .status()
-        .map_err(|e| format!("RawTherapee could not be started: {e}"))?;
+    let mut cmd = Command::new(program);
+    cmd.args(["-q", "-o"]).arg(output).arg("-p").arg(pp3).args(["-t", "-b16", "-Y", "-c"]).arg(input);
+    // Windows does not hand a thread's priority to the program it starts.
+    // Below normal is one step under the window. Idle, RawTherapee still
+    // takes the cores. On Linux the thread that starts it already stepped
+    // back, and the program inherits that.
+    #[cfg(windows)]
+    if crate::room::yields_to_a_window() {
+        use std::os::windows::process::CommandExt;
+        const BELOW_NORMAL: u32 = 0x0000_4000;
+        let _ = cmd.creation_flags(BELOW_NORMAL);
+    }
+    let status = cmd.status().map_err(|e| format!("RawTherapee could not be started: {e}"))?;
     if !status.success() {
         return Err(format!("RawTherapee stopped ({status})"));
     }
@@ -687,7 +757,13 @@ fn tiff_decoder(path: &Path) -> Result<tiff::decoder::Decoder<BufReader<File>>, 
     }
 }
 
-fn note(version: &str, steps: u8, size: (usize, usize), origin: Option<(usize, usize)>) -> String {
+fn note(
+    version: &str,
+    steps: u8,
+    size: (usize, usize),
+    origin: Option<(usize, usize)>,
+    upright: bool,
+) -> String {
     let suppression = if steps == 0 { "off (0)".to_owned() } else { steps.to_string() };
     let (w, h) = size;
     let place = match origin {
@@ -701,6 +777,8 @@ fn note(version: &str, steps: u8, size: (usize, usize), origin: Option<(usize, u
              a recorded origin, so both pictures were centred. The part written is {w} x {h}."
         ),
     };
+    let held =
+        if upright { "Both pictures were turned upright, the way the camera held them.\n\n" } else { "" };
     format!(
         "\
 Both pictures are 16-bit TIFF, uncompressed. They were developed by RawTherapee {version}
@@ -714,7 +792,7 @@ RawTherapee did not demosaic that picture again.
 
 {place}
 
-{}.
+{held}{}.
 ",
         file::SOFTWARE,
     )
@@ -801,6 +879,44 @@ mod tests {
                 at.2 - shared.2 <= 64 && at.3 - shared.3 <= 64,
                 "{name}: shared {shared:?}, frame {at:?}"
             );
+        }
+    }
+
+    #[test]
+    fn the_exif_orientation_is_read_from_the_metadata() {
+        let Ok(path) = std::env::var("XTRANS_ONE") else { return };
+        let source = RawSource::new(Path::new(&path)).unwrap();
+        let decoder = rawler::get_decoder(&source).unwrap();
+        let img = decoder.raw_image(&source, &RawDecodeParams::default(), true).unwrap();
+        let tag = camera_orientation(decoder.as_ref(), &source);
+        assert_eq!(img.orientation.to_u16(), 1, "the picture field stays at 1");
+        assert!((1..=8).contains(&tag), "{tag}");
+        let frame = convert::frame_of(&img).unwrap();
+        let turned = rawtherapee_turned((frame.width, frame.height), (frame.height, frame.width), tag);
+        assert_eq!(turned, matches!(tag, 6 | 8));
+    }
+
+    #[test]
+    fn a_turned_picture_comes_back_to_the_same_pixels() {
+        // 7726 x 5149 held upright is what RawTherapee wrote as 5149 x 7726.
+        assert!(rawtherapee_turned((7726, 5149), (5149, 7726), 6));
+        assert!(rawtherapee_turned((7726, 5149), (5149, 7726), 8));
+        assert!(rawtherapee_turned((7726, 5149), (7726, 5149), 3));
+        assert!(!rawtherapee_turned((7726, 5149), (5149, 7726), 1));
+        assert!(!rawtherapee_turned((7726, 5149), (7726, 5149), 6));
+
+        let mut sensor = Rgb16::new(2, 3);
+        for (i, (x, y)) in [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2), (1, 2)].into_iter().enumerate() {
+            let v = (i as u16 + 1) << 8;
+            sensor.put_pixel(x, y, Rgb([v, v, v]));
+        }
+        for orientation in [3_u16, 6, 8] {
+            let upright = turn_upright(&sensor, orientation);
+            let back = turn_back(&upright, orientation);
+            assert_eq!(back.dimensions(), sensor.dimensions(), "{orientation}");
+            assert_eq!(back.as_raw(), sensor.as_raw(), "{orientation}");
+            let again = turn_upright(&back, orientation);
+            assert_eq!(again.as_raw(), upright.as_raw(), "{orientation}");
         }
     }
 

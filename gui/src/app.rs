@@ -207,6 +207,24 @@ struct Comparing {
     since: Instant,
 }
 
+/// Where the program picker opens when the command has not been chosen yet.
+fn cli_directory() -> Option<PathBuf> {
+    ["/usr/bin", "/usr/local/bin", "/opt/homebrew/bin", "/Applications/RawTherapee.app/Contents/MacOS"]
+        .into_iter()
+        .map(PathBuf::from)
+        .chain(std::env::var_os("ProgramFiles").map(PathBuf::from))
+        .find(|dir| dir.is_dir())
+}
+
+fn dialog_title(pick: Pick) -> &'static str {
+    match pick {
+        Pick::Files => "Add Fuji RAF files",
+        Pick::Folder => "Add a folder of Fuji RAFs",
+        Pick::Output => "Choose a folder",
+        Pick::Program => "Choose rawtherapee-cli",
+    }
+}
+
 /// What the dialog is open for.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Pick {
@@ -474,6 +492,7 @@ impl App {
         let mut dialog = FileDialog::new()
             .add_file_filter_extensions("Fuji RAF", vec!["raf", "RAF", "Raf"])
             .add_file_filter("All files", Filter::new(|_: &Path| true))
+            .add_file_filter("rawtherapee-cli", Filter::new(settings::is_rawtherapee_cli))
             .default_file_filter("Fuji RAF");
         dialog.config_mut().opening_mode = OpeningMode::AlwaysInitialDir;
         let mut system = System::new();
@@ -790,14 +809,56 @@ impl App {
     }
 
     fn open_dialog(&mut self, pick: Pick) {
+        {
+            let config = self.dialog.config_mut();
+            match pick {
+                Pick::Program => {
+                    // Photographs are not in this list. The filter cannot be
+                    // switched to Fuji RAF.
+                    config.file_filters.retain(|filter| filter.name == "rawtherapee-cli");
+                    config.show_all_files_filter = false;
+                    config.default_file_filter = Some("rawtherapee-cli".into());
+                    config.title = Some(dialog_title(pick).into());
+                }
+                Pick::Files | Pick::Folder | Pick::Output => {
+                    if !config.file_filters.iter().any(|filter| filter.name == "Fuji RAF") {
+                        config.file_filters = vec![
+                            egui_file_dialog::FileFilter {
+                                id: egui::Id::new("Fuji RAF"),
+                                name: "Fuji RAF".into(),
+                                filter: Filter::new(|path: &Path| {
+                                    matches!(
+                                        path.extension().and_then(|ext| ext.to_str()),
+                                        Some("raf" | "RAF" | "Raf")
+                                    )
+                                }),
+                            },
+                            egui_file_dialog::FileFilter {
+                                id: egui::Id::new("All files"),
+                                name: "All files".into(),
+                                filter: Filter::new(|_: &Path| true),
+                            },
+                            egui_file_dialog::FileFilter {
+                                id: egui::Id::new("rawtherapee-cli"),
+                                name: "rawtherapee-cli".into(),
+                                filter: Filter::new(settings::is_rawtherapee_cli),
+                            },
+                        ];
+                    }
+                    config.show_all_files_filter = true;
+                    config.default_file_filter = Some("Fuji RAF".into());
+                    config.title = Some(dialog_title(pick).into());
+                }
+            }
+        }
         let from = match pick {
             Pick::Output => self.settings.folder.clone().or_else(|| self.settings.last_dir.clone()),
             Pick::Program => self
-                .settings
-                .rawtherapee
-                .as_ref()
-                .and_then(|p| p.parent().map(Path::to_path_buf))
-                .or_else(|| self.settings.last_dir.clone()),
+                .rawtherapee_program()
+                .filter(|path| settings::is_rawtherapee_cli(path))
+                .and_then(|path| path.parent().map(Path::to_path_buf))
+                .filter(|dir| dir.is_dir())
+                .or_else(cli_directory),
             Pick::Files | Pick::Folder => self.settings.last_dir.clone(),
         };
         if let Some(dir) = from.filter(|d| d.is_dir()).or_else(settings::home) {
@@ -833,7 +894,14 @@ impl App {
             }
             Pick::Program => {
                 if let Some(path) = self.dialog.take_picked() {
-                    self.settings.rawtherapee = Some(path);
+                    if settings::is_rawtherapee_cli(&path) {
+                        self.settings.rawtherapee = Some(path);
+                        self.rt_for = None;
+                    } else {
+                        self.note = Some(
+                            "That file is not rawtherapee-cli. Choose the program, not a photograph.".into(),
+                        );
+                    }
                 }
             }
         }
@@ -1135,7 +1203,10 @@ impl App {
                         choose = s.folder.is_none();
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        choose |= ui.add(Chip::action("Choose…").height(20.0)).clicked();
+                        choose |= ui
+                            .add(Chip::action("Choose folder…").height(20.0))
+                            .on_hover_text("The folder the DNGs are written into")
+                            .clicked();
                     });
                 });
                 if let Some(folder) = &s.folder {
@@ -1307,6 +1378,10 @@ impl App {
 
     /// The RawTherapee command, looked up again only when the choice changes.
     fn rawtherapee_program(&mut self) -> Option<PathBuf> {
+        if self.settings.rawtherapee.as_ref().is_some_and(|path| !settings::is_rawtherapee_cli(path)) {
+            self.settings.rawtherapee = None;
+            self.rt_for = None;
+        }
         let chosen = self.settings.rawtherapee.clone();
         if self.rt_for.as_ref() != Some(&chosen) {
             self.rt_program = mimizan_lab_xtrans::compare::find(chosen.as_deref());
@@ -1362,7 +1437,10 @@ impl App {
                     found.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "not found".into());
                 ui.add(egui::Label::new(theme::quiet(&shown)).truncate()).on_hover_text(&shown);
                 ui.horizontal(|ui| {
-                    choose = ui.add(Chip::action("Choose…").height(20.0)).clicked();
+                    choose = ui
+                        .add(Chip::action("Choose rawtherapee-cli…").height(20.0))
+                        .on_hover_text("The program rawtherapee-cli. A photograph cannot be chosen here.")
+                        .clicked();
                     if self.settings.rawtherapee.is_some()
                         && ui.add(Chip::action("Auto").height(20.0)).clicked()
                     {
@@ -1390,7 +1468,7 @@ impl App {
                         Chip::action("Compare this file").wide(width).height(28.0),
                     )
                     .on_disabled_hover_text(if found.is_none() {
-                        "RawTherapee was not found. Choose rawtherapee-cli; set the filter to All files."
+                        "RawTherapee was not found. Choose rawtherapee-cli."
                     } else if converting {
                         "A conversion is running"
                     } else {
@@ -1457,6 +1535,7 @@ impl App {
         std::thread::Builder::new()
             .name("compare".into())
             .spawn(move || {
+                crate::pace::step_behind();
                 let say = |words: &str| {
                     let _ = tx.send(CompareMsg::Step(words.to_owned()));
                     ctx.request_repaint();

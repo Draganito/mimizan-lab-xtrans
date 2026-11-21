@@ -21,6 +21,7 @@ egui-file-dialog = "0.15"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff"] }
 # Free memory before a file is begun: a picture takes several GB.
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+thread-priority = "3.1.1"
 
 # GNOME Wayland draws no server-side frame: winit draws the Adwaita-style
 # client-side decorations itself.

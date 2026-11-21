@@ -1,5 +1,6 @@
 //! The conversions, off the window's thread: one file at a time, because
-//! one picture takes several GB of memory and every core there is.
+//! one picture takes several GB of memory. The cores sit a step behind
+//! the window, and one core stays with it.
 
 use crate::queue::Id;
 use mimizan_lab_xtrans::convert;
@@ -141,6 +142,7 @@ impl Worker {
         std::thread::Builder::new()
             .name("convert".into())
             .spawn(move || {
+                crate::pace::step_behind();
                 let mut system = System::new();
                 for job in taken {
                     let say = |told: Told| {

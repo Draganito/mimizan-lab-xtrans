@@ -56,7 +56,7 @@ impl Settings {
                 "last_dir" => s.last_dir = path,
                 "suppression_on" => s.suppression_on = on,
                 "suppression" => s.suppression = value.parse().unwrap_or(0).min(5),
-                "rawtherapee" => s.rawtherapee = path.filter(|p| p.is_file()),
+                "rawtherapee" => s.rawtherapee = path.filter(|p| p.is_file() && is_rawtherapee_cli(p)),
                 _ => {}
             }
         }
@@ -113,6 +113,15 @@ fn place() -> Option<PathBuf> {
     Some(dir?.join("mimizan-lab-xtrans").join("window.conf"))
 }
 
+/// The file is the RawTherapee command, not a photograph that happens
+/// to have been picked in the same dialog.
+pub fn is_rawtherapee_cli(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(|name| name.to_str()).map(|name| name.to_ascii_lowercase()).as_deref(),
+        Some("rawtherapee-cli") | Some("rawtherapee-cli.exe")
+    )
+}
+
 /// The user's own folder, where a dialog opens when nothing was opened
 /// before.
 pub fn home() -> Option<PathBuf> {
@@ -122,7 +131,7 @@ pub fn home() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::Settings;
+    use super::{fs, Settings};
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -158,5 +167,22 @@ mod tests {
         assert_eq!(s.target(raf), Path::new("/out/DSCF0001.dng"));
         // A folder that was never chosen is not one to write into.
         assert!(!Settings::parse("into_folder=1\nfolder=\n").into_folder);
+    }
+
+    #[test]
+    fn a_photograph_is_not_kept_as_the_program() {
+        let dir = std::env::temp_dir().join(format!("xtrans-cli-name-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let raf = dir.join("photo.RAF");
+        let cli = dir.join("rawtherapee-cli");
+        fs::write(&raf, b"x").unwrap();
+        fs::write(&cli, b"x").unwrap();
+        assert!(Settings::parse(&format!("rawtherapee={}\n", raf.display())).rawtherapee.is_none());
+        assert_eq!(
+            Settings::parse(&format!("rawtherapee={}\n", cli.display())).rawtherapee.as_deref(),
+            Some(cli.as_path())
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 }

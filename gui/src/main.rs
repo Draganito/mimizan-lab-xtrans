@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 mod app;
 mod load;
+mod pace;
 mod queue;
 mod settings;
 mod theme;
@@ -36,6 +37,9 @@ fn app_icon() -> Arc<egui::IconData> {
 }
 
 fn main() -> eframe::Result {
+    // Before any conversion, so the pool exists and the window is drawn
+    // ahead of the work.
+    pace::install();
     // Files and folders named on the command line are in the list from
     // the start: "Open with" of a file manager.
     let initial: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();

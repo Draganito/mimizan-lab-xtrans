@@ -15,4 +15,5 @@ pub mod filter;
 pub mod plane;
 #[cfg(test)]
 mod rng;
+pub mod room;
 pub mod xtrans;

@@ -21,7 +21,14 @@ egui-file-dialog = "0.15"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff"] }
 # Free memory before a file is begun: a picture takes several GB.
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+
+# Linux lowers the thread with niceness, Windows with a thread priority.
+# macOS has neither for one thread: gui/darwin sets the utility class.
+[target.'cfg(not(target_os = "macos"))'.dependencies]
 thread-priority = "3.1.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+mimizan-lab-xtrans-darwin = { path = "darwin" }
 
 # GNOME Wayland draws no server-side frame: winit draws the Adwaita-style
 # client-side decorations itself.

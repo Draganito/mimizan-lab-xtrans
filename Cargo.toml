@@ -2,7 +2,7 @@
 # `cargo test` and `cargo deb` mean without more words. The window is the
 # second member: `cargo build --release -p mimizan-lab-xtrans-gui`.
 [workspace]
-members = [".", "gui"]
+members = [".", "gui", "gui/darwin"]
 
 [workspace.package]
 version = "0.4.5"

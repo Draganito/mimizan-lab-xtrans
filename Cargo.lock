@@ -1760,6 +1760,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "mimizan-lab-xtrans-darwin"
+version = "0.4.5"
+
+[[package]]
 name = "mimizan-lab-xtrans-gui"
 version = "0.4.5"
 dependencies = [
@@ -1768,6 +1772,7 @@ dependencies = [
  "egui-file-dialog",
  "image",
  "mimizan-lab-xtrans",
+ "mimizan-lab-xtrans-darwin",
  "rawler",
  "rayon",
  "sysinfo",

@@ -2,9 +2,11 @@
 //!
 //! The work runs on every core but one, and a step behind the window's
 //! own thread. While the window is idle the cores stay full. When it
-//! draws, it is served first. A child program inherits the step back, so
-//! RawTherapee does the same.
+//! draws, it is served first. On Linux a child program inherits that
+//! step. On Windows and macOS it does not, and the comparison lowers
+//! RawTherapee itself.
 
+#[cfg(not(target_os = "macos"))]
 use thread_priority::{set_current_thread_priority, ThreadPriority, ThreadPriorityValue};
 
 /// Cores the conversion may fill. One stays with the window. A machine
@@ -15,14 +17,19 @@ pub fn cores_for_the_work() -> usize {
 }
 
 /// About ten steps down on Linux (`nice` 9) and below normal on Windows.
-/// 23 of 0..=99 lands there on both.
+/// 23 of 0..=99 lands there on both. macOS uses the utility class instead:
+/// this call does not lower a normal thread there.
+#[cfg(not(target_os = "macos"))]
 fn priority() -> ThreadPriority {
     let step = ThreadPriorityValue::try_from(23u8).expect("23 is inside 0..=99");
     ThreadPriority::Crossplatform(step)
 }
 
-/// This thread, and a program it starts, run a step behind the window.
+/// This thread runs a step behind the window.
 pub fn step_behind() {
+    #[cfg(target_os = "macos")]
+    mimizan_lab_xtrans_darwin::step_behind();
+    #[cfg(not(target_os = "macos"))]
     let _ = set_current_thread_priority(priority());
 }
 
@@ -53,10 +60,11 @@ mod tests {
         }
     }
 
-    /// A child prints the niceness it inherited. The window's thread
-    /// stays at 0; the work's thread steps down, and so does a program
-    /// it starts.
-    #[cfg(unix)]
+    /// A child prints the niceness it inherited. The window's thread stays
+    /// where it started; the work's thread steps down, and so does a
+    /// program it starts. The start is measured, not assumed to be zero:
+    /// a runner may already be stepped back.
+    #[cfg(target_os = "linux")]
     #[test]
     fn the_work_steps_behind_and_the_window_thread_does_not() {
         fn nice_of_a_child() -> i32 {
@@ -66,14 +74,31 @@ mod tests {
                 .expect("python3");
             String::from_utf8_lossy(&out.stdout).trim().parse().expect("a niceness")
         }
-        assert_eq!(nice_of_a_child(), 0);
+        let window = nice_of_a_child();
         let from_the_work = std::thread::spawn(|| {
             super::step_behind();
             nice_of_a_child()
         })
         .join()
         .expect("the work thread");
-        assert!(from_the_work > 0, "{from_the_work}");
-        assert_eq!(nice_of_a_child(), 0);
+        assert!(from_the_work > window, "work {from_the_work}, window {window}");
+        assert_eq!(nice_of_a_child(), window);
+    }
+
+    /// The work takes the utility class. The window's thread keeps the
+    /// class it had. Niceness is the wrong ruler here: macOS reports it
+    /// shifted, and it would cover the whole process.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_work_steps_behind_and_the_window_thread_does_not() {
+        let window = mimizan_lab_xtrans_darwin::class_of_this_thread();
+        let from_the_work = std::thread::spawn(|| {
+            super::step_behind();
+            mimizan_lab_xtrans_darwin::class_of_this_thread()
+        })
+        .join()
+        .expect("the work thread");
+        assert_eq!(from_the_work, mimizan_lab_xtrans_darwin::UTILITY_CLASS, "{from_the_work:#x}");
+        assert_eq!(mimizan_lab_xtrans_darwin::class_of_this_thread(), window);
     }
 }

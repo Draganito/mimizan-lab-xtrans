@@ -598,14 +598,32 @@ fn link_or_copy(from: &Path, to: &Path) -> Result<(), String> {
     fs::copy(from, to).map(|_| ()).map_err(|e| format!("{}: {e}", to.display()))
 }
 
+/// The program to run. On macOS, with a window up, it is started through
+/// `nice`: a child there does not inherit the thread's class, and niceness
+/// belongs to the process, so only this child steps back.
+#[cfg(target_os = "macos")]
+fn lowered(program: &Path) -> Command {
+    let mut cmd = Command::new("/usr/bin/nice");
+    cmd.arg("-n").arg("10").arg(program);
+    cmd
+}
+
+fn command_for(program: &Path) -> Command {
+    #[cfg(target_os = "macos")]
+    if crate::room::yields_to_a_window() {
+        return lowered(program);
+    }
+    Command::new(program)
+}
+
 fn develop(program: &Path, pp3: &Path, input: &Path, output: &Path) -> Result<(), String> {
     // -c is last. -t -b16 is 16-bit TIFF, uncompressed, so nothing is lost.
-    let mut cmd = Command::new(program);
+    let mut cmd = command_for(program);
     cmd.args(["-q", "-o"]).arg(output).arg("-p").arg(pp3).args(["-t", "-b16", "-Y", "-c"]).arg(input);
     // Windows does not hand a thread's priority to the program it starts.
     // Below normal is one step under the window. Idle, RawTherapee still
     // takes the cores. On Linux the thread that starts it already stepped
-    // back, and the program inherits that.
+    // back, and the program inherits that. macOS is handled in command_for.
     #[cfg(windows)]
     if crate::room::yields_to_a_window() {
         use std::os::windows::process::CommandExt;
@@ -984,5 +1002,22 @@ mod tests {
     fn a_version_line_is_read() {
         assert_eq!(parse_version("RawTherapee, version 5.11, command line.\n").as_deref(), Some("5.11"));
         assert!(parse_version("no version here").is_none());
+    }
+
+    /// macOS reports niceness shifted by 20, and a runner may already be
+    /// stepped back. The child only has to sit strictly behind whatever
+    /// the window's process is doing.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn rawtherapee_starts_a_step_behind_the_window() {
+        fn reported(lower: bool) -> i32 {
+            let mut cmd = if lower { lowered(Path::new("python3")) } else { Command::new("python3") };
+            cmd.args(["-c", "import os; print(os.nice(0))"]);
+            let out = cmd.output().expect("python3");
+            String::from_utf8_lossy(&out.stdout).trim().parse().expect("a niceness")
+        }
+        let window = reported(false);
+        let child = reported(true);
+        assert!(child > window, "child {child}, window {window}");
     }
 }

@@ -113,7 +113,7 @@ The DNG says black is 0 rather than carrying the RAF's black level, because dark
 
 It is a demosaicer, and it is not what Mimizan Lab does with a Bayer file. There, every pixel is one clean measurement and nothing is estimated. Here, one reading per photosite goes in and three colour values per pixel come out, worked out from the readings around it. The mosaic is not filled in by guessing: brightness and colour are read off the frequencies where the X-Trans pattern carries them.
 
-- **More of the real detail, less false colour.** As sharp as RawTherapee's 3-pass, with about a third of the false colour.
+- **More of the real detail, less false colour.** As sharp as RawTherapee's 3-pass, with about a third of the false colour. Colour the lens put into the readings stays; less false colour means only what a demosaic would add.
 - **The colour of the fine detail stays.** Nothing goes back over the picture to clean it up, so the real colour is not taken away with the false.
 - **Less noise, and calmer.** About half the colour noise at high ISO.
 - **A DNG your developer already opens.** Linear, in the camera's own colours: black at 0, white at 65535, no tone curve, the white balance left for the developer. It opens the file the way it opens the RAF.

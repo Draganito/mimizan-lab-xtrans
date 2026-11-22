@@ -2,9 +2,13 @@
 
 > A Fuji X-Trans RAF in, a linear DNG out.
 
-`xtrans2dng` turns the RAF of a Fuji X-Trans camera into a DNG that holds red, green and blue for every pixel. The mosaic is not interpolated. It is taken apart into the luminance and the two chrominances it carries on the tile's own frequencies, under the prior the mosaic itself makes most probable.
+**This project is frozen.** It served to develop the algorithm, and that work is done. The same algorithm was carried into [Mimizan Lab](https://github.com/Draganito/mimizan) 0.20.0, and the Fuji X-Trans RAF support was built there. Use Mimizan Lab. This repository stays as the record of the measurement and of the command that wrote the files. It will not be developed further.
 
-It is the companion of [Mimizan Lab](https://github.com/Draganito/mimizan), the darkroom that reads a Bayer mosaic the same way. Mimizan Lab does not read X-Trans; from 0.19.0 it opens the DNG this program writes. Any raw developer that reads a linear DNG opens it too.
+In Mimizan Lab a folder lies along the bottom as a strip of film. An X-Trans RAF with no DNG beside it shows the camera's embedded JPEG, and only until it is opened. Opening it writes the DNG once, next to the RAF, with the highlights left as recorded. That writing is the slow part, about three quarters of a minute for 26 megapixels. The RAF then leaves the strip. Every later open reads the DNG and does not look at the RAF again. The DNG is three channels a pixel, and the plate, the paper and the print are those of any other linear DNG: nothing is separated a second time. A Bayer RAF, including one from Fuji, was already on the ordinary path and stays there.
+
+The preview in this window is not the way to look at the file. After a conversion the picture on screen is balanced, lifted to the brightness of the camera's JPEG and given a contrast, and that display can burn the highlights out. The DNG itself is not touched by it. Mimizan Lab prints the file on its paper, which keeps what stands above white.
+
+`xtrans2dng` turns the RAF of a Fuji X-Trans camera into a DNG that holds red, green and blue for every pixel. The mosaic is not interpolated. It is taken apart into the luminance and the two chrominances it carries on the tile's own frequencies, under the prior the mosaic itself makes most probable. Any raw developer that reads a linear DNG opens that file too. From Mimizan Lab 0.19.0 the DNG opened as a colour file; from 0.20.0 the window opens the RAF itself, as above.
 
 ```bash
 xtrans2dng DSCF3861.RAF
@@ -85,7 +89,7 @@ While it works it says what it found: the camera, the prior, the share of burnt-
 - **Mark** the files to convert: the box in a row, Space, Shift for a range, or All, None and Without DNG in the toolbar. A file comes in marked unless its DNG is there already.
 - **Compare**, when RawTherapee is installed. Optional, and not part of the conversion. It puts this program's picture beside RawTherapee's 3-pass of the same file. RawTherapee develops both with one profile — camera white balance, no tone curve, no sharpening, no noise reduction — so the only difference is the demosaic. False colour suppression on that 3-pass can be off, or from 0 to 5; it does not change this program's picture. The two frames are written as 16-bit TIFF beside the RAF, in a folder `<name> compare`, cropped to the same pixels, with `how.txt` and the profile. The window then opens them side by side: the wheel enlarges, the drag moves, and both stay on the same place. A conversion that is running is left to finish first.
 - **Convert** runs the marked files one after the other. The row and the panel at the right say how far the file in work is; "Stop after this file" ends the run there.
-- **When a file is done** its DNG is read back and shown in the preview's place. To be looked at it is balanced, taken to sRGB by its own matrix, made as light as the preview and given a mild contrast; the file is not touched by that. `D` goes between preview and DNG, the wheel enlarges, `1` is one pixel on one, `F` the whole picture.
+- **When a file is done** its DNG is read back and shown in the preview's place. To be looked at it is balanced, taken to sRGB by its own matrix, made as light as the preview and given a mild contrast; the file is not touched by that. That display can burn the highlights, and it is not how Mimizan Lab prints the file. `D` goes between preview and DNG, the wheel enlarges, `1` is one pixel on one, `F` the whole picture.
 
 The DNGs go beside their RAFs or into one folder, and they are the ones the command writes, byte for byte. A file that needs more memory than is free when its turn comes is left out and says so.
 

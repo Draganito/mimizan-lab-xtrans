@@ -24,13 +24,18 @@ authors.workspace = true
 name = "xtrans2dng"
 path = "src/main.rs"
 
+# The Kodak bench. Not installed: the packages ship xtrans2dng only.
+[[bin]]
+name = "xtrans-kodak"
+path = "src/bin/kodak.rs"
+
 [dependencies]
 rawler = "0.8"
 rayon = "1.12"
 rustfft = "6"
 clap = { version = "4.6", features = ["derive"] }
 # The optional RawTherapee comparison writes 16-bit TIFF. The conversion does not use it.
-image = { version = "0.25", default-features = false, features = ["tiff"] }
+image = { version = "0.25", default-features = false, features = ["png", "tiff"] }
 # Strips of the comparison TIFF, so a window can read the part on screen.
 tiff = "0.11"
 

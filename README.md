@@ -134,9 +134,49 @@ Compared with the "3-pass" of RawTherapee 5.11 on a test chart taken with the X-
 
 It is as sharp as 3-pass with about a third of its false colour and half its colour noise, and it keeps the colour of fine detail, which the suppression takes out. Lines near the sensor's limit are not as calm as RawTherapee's yet; the blank paper beside them measures 0.56. It takes 45 s where RawTherapee takes about 5.
 
+## On the Kodak set
+
+The 24 pictures of the Kodak set, linearised, sampled through the X-Trans tile and quantised to 16 bit. The same mosaic goes to this program and to RawTherapee 5.11. The balance is 1, 1, 1, because the picture is already the colour. The separation runs under the sRGB curve and comes back to linear light, as a camera file does. Nothing in these pictures is treated as burnt out. CPSNR, and the PSNR of red, green and blue, in dB on sRGB-encoded values; 16 px of the edge are left out. The last column is how many of the 24 pictures a method leads. A smooth picture, measured the same way, stays above 59 dB for every method, so the path has no tone curve and no offset left in it. On one picture, shifting RawTherapee by a pixel drops it from 31.5 dB to 22.9 dB; the unshifted place is the one that was measured.
+
+Three conditions, the same ones Mimizan Lab uses for its plate. Pixel-sharp is the Kodak pixels as they stand, sharper than a lens delivers. Behind a lens is a Gaussian of σ 0.75 px before the sampling, the sharpest real lens on a real sensor. Twice the size is the picture enlarged 2× with Lanczos-3 before the sampling, a 48 MP sensor seen from the distance of 12 MP.
+
+The same-colour average is the floor, computed here: a photosite of a colour is kept, and a missing colour is the inverse-distance mean of that colour within four pixels. It is not a method anyone ships. `xtrans-kodak` is the program that measured this. It is not part of the packages.
+
+Pixel-sharp:
+
+| Method | CPSNR | R | G | B | leads |
+|---|---|---|---|---|---|
+| xtrans2dng | 39.81 | 39.19 | 42.30 | 38.82 | 24/24 |
+| 3-pass | 34.17 | 33.58 | 36.60 | 33.52 | 0/24 |
+| 1-pass (medium) | 33.78 | 33.20 | 36.05 | 33.18 | 0/24 |
+| 3-pass, false colour suppression 3 | 32.28 | 34.09 | 35.77 | 29.74 | 0/24 |
+| same-colour average | 27.81 | 27.14 | 29.55 | 27.18 | 0/24 |
+
+Behind a lens (σ 0.75 px):
+
+| Method | CPSNR | R | G | B | leads |
+|---|---|---|---|---|---|
+| xtrans2dng | 50.97 | 49.92 | 54.48 | 50.05 | 24/24 |
+| 3-pass | 42.93 | 42.44 | 47.45 | 42.17 | 0/24 |
+| 1-pass (medium) | 42.76 | 42.30 | 47.09 | 42.05 | 0/24 |
+| 3-pass, false colour suppression 3 | 36.81 | 40.39 | 43.62 | 33.46 | 0/24 |
+| same-colour average | 32.88 | 32.09 | 34.44 | 32.49 | 0/24 |
+
+Twice the size:
+
+| Method | CPSNR | R | G | B | leads |
+|---|---|---|---|---|---|
+| xtrans2dng | 48.89 | 48.46 | 52.52 | 47.35 | 24/24 |
+| 3-pass | 43.05 | 42.73 | 47.98 | 41.87 | 0/24 |
+| 1-pass (medium) | 43.04 | 42.78 | 47.78 | 41.87 | 0/24 |
+| 3-pass, false colour suppression 3 | 37.40 | 40.40 | 44.02 | 34.16 | 0/24 |
+| same-colour average | 31.84 | 31.38 | 33.50 | 31.03 | 0/24 |
+
+Ahead of Markesteijn on all 24 pictures in each condition: by 5.6 dB pixel-sharp, by 8.0 dB behind a lens, by 5.8 dB at twice the size. The 1-pass sits 0.2 to 0.4 dB under the 3-pass. False colour suppression 3 lowers the figure, and the blue most of all, because it takes out colour the original picture has. Green is this program's best channel. These pictures have no lens of their own: every difference from the original is the demosaic's.
+
 ## What is not known
 
-- **How it stands against other X-Trans demosaicers** than RawTherapee's 3-pass, and on other pictures than one test chart and one landscape.
+- **Adobe, Iridient and Capture One.** Each demosaics X-Trans in its own way, and none of them was in the measurement above. On real files, one test chart and one landscape are still all it has been seen on.
 - **Other cameras.** Only the two above were tried. The file is decoded by [rawler](https://github.com/dnglab/dnglab); a RAF it reads and whose tile is an X-Trans one should convert, and a file with another mosaic is refused ("not an X-Trans mosaic").
 - **Other raw developers** than the three above.
 
